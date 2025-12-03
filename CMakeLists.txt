@@ -17,7 +17,10 @@ add_compile_options(
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-add_executable(embrace src/main.cpp)
+file(GLOB_RECURSE SOURCES "src/*.cpp")
+add_executable(embrace ${SOURCES})
+target_include_directories(embrace PRIVATE src)
+
 
 include(FetchContent)
 FetchContent_Declare(
