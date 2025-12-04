@@ -1,6 +1,8 @@
 #include "core/common.hpp"
+#include "core/status.hpp"
 #include "indexing/btree.hpp"
 #include "indexing/node.hpp"
+#include "storage/wal.hpp"
 #include <cstddef>
 #include <fmt/core.h>
 #include <memory>
@@ -9,11 +11,20 @@
 
 namespace embrace::indexing {
 
-    Btree::Btree() {
+    Btree::Btree(const std::string &wal_path) : wal_path_(wal_path) {
         root_ = std::make_unique<LeafNode>();
+
+        if (!wal_path_.empty()) {
+            wal_writer_ = std::make_unique<storage::WalWriter>(wal_path_);
+        }
     }
 
-    Btree::~Btree() = default;
+    Btree::~Btree() {
+        if (wal_writer_) {
+            wal_writer_->flush();
+            wal_writer_->sync();
+        }
+    }
 
     auto Btree::get(const core::Key &key) -> std::optional<core::Value> {
         LeafNode *leaf = find_leaf(key);
@@ -42,19 +53,23 @@ namespace embrace::indexing {
     }
 
     auto Btree::put(const core::Key &key, const core::Value &value) -> core::Status {
+        if (wal_writer_) {
+            auto wal_status = wal_writer_->write_put(key, value);
+            if (!wal_status.ok()) {
+                return wal_status;
+            }
+        }
+
         LeafNode *leaf = find_leaf(key);
 
-        // check : key exists?
         int idx = leaf->get_index(key);
         if (idx != -1) {
             leaf->values[static_cast<size_t>(idx)] = value;
             return core::Status::Ok();
         }
 
-        // Item sorted
         leaf->insert(key, value);
 
-        // check for split
         if (leaf->keys.size() >= max_degree_) {
             split_leaf(leaf);
         }
@@ -63,28 +78,25 @@ namespace embrace::indexing {
     }
 
     auto Btree::split_leaf(LeafNode *leaf) -> void {
-        // 1. Create new sibling leaf
-        auto *new_leaf = new LeafNode();
+        auto new_leaf = std::make_unique<LeafNode>();
         size_t split_idx = (max_degree_ + 1) / 2;
 
         auto split_offset = static_cast<std::ptrdiff_t>(split_idx);
 
-        // 2. Move second half of the keys/values too new leaf
         new_leaf->keys.assign(leaf->keys.begin() + split_offset, leaf->keys.end());
         new_leaf->values.assign(leaf->values.begin() + split_offset, leaf->values.end());
 
-        // 3. Resize the original leaf
         leaf->keys.resize(split_idx);
         leaf->values.resize(split_idx);
 
-        // 4. Link siblings
         new_leaf->next = leaf->next;
-        leaf->next = new_leaf;
+        leaf->next = new_leaf.get();
         new_leaf->parent = leaf->parent;
 
-        // 5. Propogate up
         core::Key promote_key = new_leaf->keys.front();
-        insert_into_parent(leaf, promote_key, new_leaf);
+        Node *new_leaf_raw = new_leaf.release();
+
+        insert_into_parent(leaf, promote_key, new_leaf_raw);
     }
 
     auto Btree::insert_into_parent(Node *old_child, const core::Key &key, Node *new_child) -> void {
@@ -107,7 +119,7 @@ namespace embrace::indexing {
             return;
         }
 
-        // Case2. Insert into existing parent
+        // Case 2: Insert into existing parent
         auto *parent = static_cast<InternalNode *>(old_child->parent);
 
         auto it = std::upper_bound(parent->keys.begin(), parent->keys.end(), key);
@@ -119,9 +131,74 @@ namespace embrace::indexing {
         new_child->parent = parent;
 
         if (parent->keys.size() >= max_degree_) {
-            fmt::print("WARNING: Internal node split required but not implemented in Sprint 0!\n");
-            // TODO : Implement internal node splitting
+            split_internal(parent);
         }
+    }
+
+    auto Btree::split_internal(InternalNode *node) -> void {
+        auto new_sibling = std::make_unique<InternalNode>();
+        size_t split_idx = (max_degree_ + 1) / 2;
+        auto split_offset = static_cast<std::ptrdiff_t>(split_idx);
+
+        core::Key promote_key = node->keys[split_idx];
+
+        new_sibling->keys.assign(node->keys.begin() + split_offset + 1, node->keys.end());
+
+        new_sibling->children.assign(node->children.begin() + split_offset + 1,
+                                     node->children.end());
+
+        for (auto *child : new_sibling->children) {
+            child->parent = new_sibling.get();
+        }
+
+        node->keys.resize(split_idx);
+        node->children.resize(split_idx + 1);
+
+        new_sibling->parent = node->parent;
+
+        Node *new_sibling_raw = new_sibling.release();
+        insert_into_parent(node, promote_key, new_sibling_raw);
+    }
+
+    auto Btree::recover_from_wal() -> core::Status {
+        if (wal_path_.empty()) {
+            return core::Status::Ok();
+        }
+
+        storage::WalReader reader(wal_path_);
+        size_t records_recovered = 0;
+        storage::WalRecord record;
+
+        while (reader.has_more()) {
+            auto status = reader.read_next(record);
+            if (status.is_not_found()) {
+                break;
+            }
+
+            if (!status.ok()) {
+                return status;
+            }
+
+            if (record.type == storage::WalRecordType::Put) {
+                // DONT WRITE WHILE RECOVERY : CRITICAL
+                auto *saved_wal = wal_writer_.release();
+                auto put_status = put(record.key, record.value);
+                wal_writer_.reset(saved_wal);
+                if (!put_status.ok()) {
+                    return put_status;
+                }
+                records_recovered++;
+            }
+        }
+        fmt::print("Recovery complete: {} records replayed from WAL\n", records_recovered);
+        return core::Status::Ok();
+    }
+
+    auto Btree::flush_wal() -> core::Status {
+        if (wal_writer_) {
+            return wal_writer_->sync();
+        }
+        return core::Status::Ok();
     }
 
     auto Btree::print_tree() -> void {
