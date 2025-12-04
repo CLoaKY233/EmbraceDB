@@ -14,12 +14,7 @@ namespace embrace::storage {
     WalWriter::WalWriter(const std::string &wal_path) : wal_path_(wal_path), fd_(-1) {
         buffer_.reserve(BUFFER_SIZE);
 
-        // Open with POSIX for proper fsync support
-        // O_WRONLY: write-only
-        // O_CREAT: create if doesn't exist
-        // O_APPEND: all writes go to end (atomic for concurrent readers)
-        // 0644: rw-r--r-- permissions
-        fd_ = open(wal_path_.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+        fd_ = open(wal_path_.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0600);
 
         if (fd_ < 0) {
             fmt::print(stderr, "ERROR: Failed to open WAL file: {} (errno: {})\n", wal_path_,
@@ -31,7 +26,6 @@ namespace embrace::storage {
 
     WalWriter::~WalWriter() {
         if (fd_ >= 0) {
-            // Ensure all data is written before closing
             flush();
             sync();
             close(fd_);
@@ -54,16 +48,21 @@ namespace embrace::storage {
         return write_record(record);
     }
 
+    static auto write_le32(std::vector<char> &buf, uint32_t val) -> void {
+        buf.push_back(static_cast<char>(val & 0xFF));
+        buf.push_back(static_cast<char>((val >> 8) & 0xFF));
+        buf.push_back(static_cast<char>((val >> 16) & 0xFF));
+        buf.push_back(static_cast<char>((val >> 24) & 0xFF));
+    }
+
     auto WalWriter::write_record(const WalRecord &record) -> core::Status {
         if (fd_ < 0) {
             return core::Status::IOError("WAL file not open");
         }
 
-        // Record format: [Type:1][KeyLen:4][Key:?][ValueLen:4][Value:?]
         uint32_t key_len = static_cast<uint32_t>(record.key.size());
         uint32_t value_len = static_cast<uint32_t>(record.value.size());
 
-        // Validate sizes
         if (key_len > core::MAX_KEY_SIZE) {
             return core::Status::InvalidArgument("Key too large for WAL");
         }
@@ -79,17 +78,11 @@ namespace embrace::storage {
                 return status;
         }
 
-        // SERIALIZE TO BUFFER
+        // Serialize to buffer (little-endian for portability)
         buffer_.push_back(static_cast<char>(record.type));
-
-        buffer_.insert(buffer_.end(), reinterpret_cast<char *>(&key_len),
-                       reinterpret_cast<char *>(&key_len) + 4);
-
+        write_le32(buffer_, key_len);
         buffer_.insert(buffer_.end(), record.key.begin(), record.key.end());
-
-        buffer_.insert(buffer_.end(), reinterpret_cast<const char *>(&value_len),
-                       reinterpret_cast<const char *>(&value_len) + 4);
-
+        write_le32(buffer_, value_len);
         buffer_.insert(buffer_.end(), record.value.begin(), record.value.end());
 
         return core::Status::Ok();
@@ -115,7 +108,6 @@ namespace embrace::storage {
                     fmt::format("Failed to write to WAL: {}", strerror(errno)));
             }
             if (n == 0) {
-                // Optional: handle unexpected short write that returns 0
                 return core::Status::IOError("Short write to WAL (wrote 0 bytes)");
             }
 
@@ -127,7 +119,6 @@ namespace embrace::storage {
     }
 
     auto WalWriter::flush() -> core::Status {
-        // TODO : HANDLE THIS BETTER
         return flush_buffer();
     }
 
@@ -154,7 +145,7 @@ namespace embrace::storage {
         fd_ = open(wal_path_.c_str(), O_RDONLY);
 
         if (fd_ < 0) {
-            fmt::print(stderr, "WARNING: WAL file not found (fresh start): {}\n", wal_path_);
+            fmt::print(stderr, "INFO: WAL file not found (fresh start): {}\n", wal_path_);
         } else {
             fmt::print("INFO: WAL reader opened: {} (fd={})\n", wal_path_, fd_);
         }
@@ -166,8 +157,19 @@ namespace embrace::storage {
         }
     }
 
+    static auto read_le32(const char *data) -> uint32_t {
+        return static_cast<uint32_t>(static_cast<unsigned char>(data[0])) |
+               (static_cast<uint32_t>(static_cast<unsigned char>(data[1])) << 8) |
+               (static_cast<uint32_t>(static_cast<unsigned char>(data[2])) << 16) |
+               (static_cast<uint32_t>(static_cast<unsigned char>(data[3])) << 24);
+    }
+
     auto WalReader::fill_buffer() -> core::Status {
-        ssize_t n = read(fd_, read_buffer_.data(), READ_BUFFER_SIZE);
+        ssize_t n;
+
+        do {
+            n = read(fd_, read_buffer_.data(), READ_BUFFER_SIZE);
+        } while (n < 0 && errno == EINTR);
 
         if (n < 0) {
             return core::Status::IOError(fmt::format("Failed to read WAL: {}", strerror(errno)));
@@ -178,7 +180,6 @@ namespace embrace::storage {
         }
 
         buffer_size_ = static_cast<size_t>(n);
-
         buffer_pos_ = 0;
         return core::Status::Ok();
     }
@@ -209,7 +210,7 @@ namespace embrace::storage {
 
     auto WalReader::read_next(WalRecord &record) -> core::Status {
         if (fd_ < 0) {
-            return core::Status::IOError("WAL file not open");
+            return core::Status::NotFound("WAL file not open");
         }
 
         char type_byte;
@@ -217,13 +218,20 @@ namespace embrace::storage {
         if (!status.ok())
             return status;
 
+        if (type_byte < 1 || type_byte > 3) {
+            return core::Status::Corruption(
+                fmt::format("Invalid WAL record type: {}", static_cast<int>(type_byte)));
+        }
+
         record.type = static_cast<WalRecordType>(type_byte);
 
-        uint32_t key_len;
-        status = read_bytes(reinterpret_cast<char *>(&key_len), 4);
+        // Read key length (little-endian)
+        char len_buf[4];
+        status = read_bytes(len_buf, 4);
         if (!status.ok()) {
             return core::Status::Corruption("Failed to read key length");
         }
+        uint32_t key_len = read_le32(len_buf);
 
         if (key_len > core::MAX_KEY_SIZE) {
             return core::Status::Corruption("Key length exceeds maximum");
@@ -237,11 +245,12 @@ namespace embrace::storage {
             }
         }
 
-        uint32_t value_len;
-        status = read_bytes(reinterpret_cast<char *>(&value_len), 4);
+        // Read value length (little-endian)
+        status = read_bytes(len_buf, 4);
         if (!status.ok()) {
             return core::Status::Corruption("Failed to read value length");
         }
+        uint32_t value_len = read_le32(len_buf);
 
         if (value_len > core::MAX_VALUE_SIZE) {
             return core::Status::Corruption("Value length exceeds maximum");
@@ -262,7 +271,6 @@ namespace embrace::storage {
         if (buffer_pos_ < buffer_size_) {
             return true;
         }
-        // TODO : Cache this, const_cast needed
         return fd_ >= 0;
     }
 

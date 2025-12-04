@@ -4,7 +4,6 @@
 #include "core/status.hpp"
 
 #include <cstdint>
-#include <fstream>
 #include <string>
 #include <vector>
 
@@ -21,25 +20,21 @@ namespace embrace::storage {
             : type(t), key(std::move(k)), value(std::move(v)) {}
     };
 
-    // Write-Ahead Log Writer
     class WalWriter {
       public:
         explicit WalWriter(const std::string &wal_path);
         ~WalWriter();
 
-        // Disable copy
         WalWriter(const WalWriter &) = delete;
         WalWriter &operator=(const WalWriter &) = delete;
+        WalWriter(WalWriter &&) = delete;
+        WalWriter &operator=(WalWriter &&) = delete;
 
-        // Write record
         auto write_put(const core::Key &key, const core::Value &value) -> core::Status;
         auto write_delete(const core::Key &key) -> core::Status;
         auto write_checkpoint() -> core::Status;
 
-        // Flush buffered data to disk
         auto flush() -> core::Status;
-
-        // Sync disk (fsync)
         auto sync() -> core::Status;
 
         [[nodiscard]] auto is_open() const -> bool {
@@ -49,7 +44,6 @@ namespace embrace::storage {
       private:
         std::string wal_path_;
         int fd_;
-        std::ofstream file_;
         std::vector<char> buffer_;
         static constexpr size_t BUFFER_SIZE = 4096;
 
@@ -57,20 +51,23 @@ namespace embrace::storage {
         auto flush_buffer() -> core::Status;
     };
 
-    // Write-Ahead Log Reader (for recovery)
     class WalReader {
       public:
         explicit WalReader(const std::string &wal_path);
         ~WalReader();
 
-        // Disable copy
         WalReader(const WalReader &) = delete;
         WalReader &operator=(const WalReader &) = delete;
+        WalReader(WalReader &&) = delete;
+        WalReader &operator=(WalReader &&) = delete;
 
         auto read_next(WalRecord &record) -> core::Status;
 
-        // Check if more records availabble
         [[nodiscard]] auto has_more() const -> bool;
+
+        [[nodiscard]] auto is_open() const -> bool {
+            return fd_ >= 0;
+        }
 
       private:
         std::string wal_path_;

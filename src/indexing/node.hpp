@@ -3,6 +3,7 @@
 #include "core/common.hpp"
 #include <algorithm>
 #include <iterator>
+#include <memory>
 #include <vector>
 
 namespace embrace::indexing {
@@ -11,7 +12,7 @@ namespace embrace::indexing {
 
     struct Node {
         NodeType type;
-        Node *parent = nullptr;
+        Node *parent = nullptr; // Non-owning pointer (parent owns us)
 
         explicit Node(NodeType t) : type(t) {}
         virtual ~Node() = default;
@@ -25,17 +26,17 @@ namespace embrace::indexing {
         std::vector<core::Key> keys;
         std::vector<core::Value> values;
 
-        LeafNode *next = nullptr;
-        LeafNode *prev = nullptr;
+        LeafNode *next = nullptr; // Non-owning pointer (tree manages ownership)
+        LeafNode *prev = nullptr; // Non-owning pointer
 
         LeafNode() : Node(NodeType::Leaf) {
-            // Reserve space to avoid reallocation during initial fills
             keys.reserve(32);
             values.reserve(32);
         }
 
+        ~LeafNode() override = default;
+
         auto get_index(const core::Key &key) -> int {
-            // std::lower_bound performs binary search O(log N)
             auto it = std::lower_bound(keys.begin(), keys.end(), key);
             if (it != keys.end() && *it == key) {
                 return static_cast<int>(std::distance(keys.begin(), it));
@@ -54,9 +55,12 @@ namespace embrace::indexing {
 
     struct InternalNode : public Node {
         std::vector<core::Key> keys;
-        std::vector<Node *> children;
+
+        std::vector<std::unique_ptr<Node>> children;
 
         InternalNode() : Node(NodeType::Internal) {}
+
+        ~InternalNode() override = default;
     };
 
 } // namespace embrace::indexing
