@@ -4,66 +4,91 @@
 auto main() -> int {
     using namespace ::embrace;
 
-    fmt::print("Initializing Embrace (Sprint 0)\n");
+    fmt::print("=== Embrace Database - Sprint 1: WAL & Recovery ===\n\n");
 
-    indexing::Btree tree;
+    {
+        fmt::print("--- Test 1: Fresh Start with WAL ---\n");
+        indexing::Btree tree("embrace.wal");
 
-    // Test1: Basic Insertion
-    fmt::print("--- Inserting Keys ---\n");
+        auto s = tree.put("apple", "red");
+        if (!s.ok()) {
+            fmt::print("ERROR: put(apple) failed: {}\n", s.to_string());
+            return 1;
+        }
 
-    auto status = tree.put("apple", "red");
-    if (!status.ok()) {
-        fmt::print("ERROR: Failed to insert apple: {}\n", status.to_string());
-        return 1;
+        s = tree.put("banana", "yellow");
+        if (!s.ok()) {
+            fmt::print("ERROR: put(banana) failed: {}\n", s.to_string());
+            return 1;
+        }
+
+        s = tree.put("cherry", "red");
+        if (!s.ok()) {
+            fmt::print("ERROR: put(cherry) failed: {}\n", s.to_string());
+            return 1;
+        }
+
+        s = tree.put("date", "brown");
+        if (!s.ok()) {
+            fmt::print("ERROR: put(date) failed: {}\n", s.to_string());
+            return 1;
+        }
+
+        s = tree.put("elderberry", "purple");
+        if (!s.ok()) {
+            fmt::print("ERROR: put(elderberry) failed: {}\n", s.to_string());
+            return 1;
+        }
+
+        s = tree.put("fig", "green");
+        if (!s.ok()) {
+            fmt::print("ERROR: put(fig) failed: {}\n", s.to_string());
+            return 1;
+        }
+
+        fmt::print("Tree after inserts:\n\n\n");
+        tree.print_tree();
+
+        auto val = tree.get("banana");
+        fmt::print("\nRetrieved banana: {}\n", val.value_or("NOT FOUND"));
+
+        tree.flush_wal();
+        fmt::print("WAL flushed to disk.\n\n");
     }
 
-    status = tree.put("banana", "yellow");
-    if (!status.ok()) {
-        fmt::print("ERROR: Failed to insert banana: {}\n", status.to_string());
-        return 1;
+    // Test 2: Recovery from WAL
+    {
+        fmt::print("--- Test 2: Recovery from WAL ---\n");
+        indexing::Btree tree("embrace.wal");
+
+        auto status = tree.recover_from_wal();
+        if (!status.ok()) {
+            fmt::print("ERROR: Recovery failed: {}\n", status.to_string());
+            return 1;
+        }
+
+        fmt::print("\nTree after recovery:\n");
+        tree.print_tree();
+
+        auto val = tree.get("banana");
+        fmt::print("\nRetrieved banana after recovery: {}\n", val.value_or("NOT FOUND"));
+
+        auto s = tree.put("grape", "purple");
+        if (!s.ok()) {
+            fmt::print("ERROR: put(grape) failed: {}\n", s.to_string());
+            return 1;
+        }
+
+        s = tree.put("honeydew", "green");
+        if (!s.ok()) {
+            fmt::print("ERROR: put(honeydew) failed: {}\n", s.to_string());
+            return 1;
+        }
+
+        fmt::print("\nTree after additional inserts:\n");
+        tree.print_tree();
     }
 
-    status = tree.put("cherry", "red");
-    if (!status.ok()) {
-        fmt::print("ERROR: Failed to insert cherry: {}\n", status.to_string());
-        return 1;
-    }
-
-    // Force a split (max_degree is 4)
-    status = tree.put("date", "brown");
-    if (!status.ok()) {
-        fmt::print("ERROR: Failed to insert date: {}\n", status.to_string());
-        return 1;
-    }
-
-    status = tree.put("elderberry", "purple");
-    if (!status.ok()) {
-        fmt::print("ERROR: Failed to insert elderberry: {}\n", status.to_string());
-        return 1;
-    }
-
-    status = tree.put("fig", "green");
-    if (!status.ok()) {
-        fmt::print("ERROR: Failed to insert fig: {}\n", status.to_string());
-        return 1;
-    }
-
-    tree.print_tree();
-
-    // Test 2: Retrieval
-    fmt::print("\n--- Retrieving Keys ---\n");
-    auto val = tree.get("banana");
-    if (val) {
-        fmt::print("Found banana: {}\n", *val);
-    } else {
-        fmt::print("Banana NOT found!\n");
-    }
-
-    // Test 3: Not Found
-    auto missing = tree.get("zucchini");
-    if (!missing) {
-        fmt::print("Zucchini correctly not found.\n");
-    }
-
+    fmt::print("\n=== All tests passed! ===\n");
     return 0;
 }

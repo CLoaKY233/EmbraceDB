@@ -4,3 +4,4 @@
 # Zed editor-specific files
 /.zed/
 /.cache/
+**.wal
