@@ -29,14 +29,18 @@ namespace embrace::indexing {
         std::unique_ptr<storage::WalWriter> wal_writer_;
         std::string wal_path_;
 
+        bool recovering_;
+
         // Configuration
-        const size_t max_degree_ = 4; // TODO : increase size, intially small for debugging
+        const size_t max_degree_ = 4;
 
         // Internal helpers
         auto find_leaf(const core::Key &key) -> LeafNode *;
         auto split_leaf(LeafNode *leaf) -> void;
         auto split_internal(InternalNode *node) -> void;
-        auto insert_into_parent(Node *old_child, const core::Key &key, Node *new_child) -> void;
+
+        auto insert_into_parent(Node *old_child, const core::Key &key,
+                                std::unique_ptr<Node> new_child) -> void;
     };
 
 } // namespace embrace::indexing

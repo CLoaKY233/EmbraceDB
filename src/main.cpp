@@ -1,10 +1,13 @@
 #include "indexing/btree.hpp"
+#include <cstdio>
 #include <fmt/core.h>
 
 auto main() -> int {
     using namespace ::embrace;
 
     fmt::print("=== Embrace Database - Sprint 1: WAL & Recovery ===\n\n");
+
+    std::remove("embrace.wal");
 
     {
         fmt::print("--- Test 1: Fresh Start with WAL ---\n");
@@ -46,13 +49,17 @@ auto main() -> int {
             return 1;
         }
 
-        fmt::print("Tree after inserts:\n\n\n");
+        fmt::print("Tree after inserts:\n\n");
         tree.print_tree();
 
         auto val = tree.get("banana");
         fmt::print("\nRetrieved banana: {}\n", val.value_or("NOT FOUND"));
 
-        tree.flush_wal();
+        auto flush_status = tree.flush_wal();
+        if (!flush_status.ok()) {
+            fmt::print("ERROR: flush_wal() failed: {}\n", flush_status.to_string());
+            return 1;
+        }
         fmt::print("WAL flushed to disk.\n\n");
     }
 
