@@ -31,6 +31,9 @@ namespace embrace::core {
         static auto Corruption(const std::string &msg) -> Status {
             return Status(StatusCode::Corruption, msg);
         }
+        static auto IOError(const std::string &msg) -> Status {
+            return Status(StatusCode::IOError, msg);
+        }
         static auto InvalidArgument(const std::string &msg) -> Status {
             return Status(StatusCode::InvalidArgument, msg);
         }

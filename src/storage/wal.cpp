@@ -1,0 +1,269 @@
+#include "core/common.hpp"
+#include "core/status.hpp"
+#include "storage/wal.hpp"
+
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <fcntl.h>
+#include <fmt/core.h>
+#include <unistd.h>
+
+namespace embrace::storage {
+
+    WalWriter::WalWriter(const std::string &wal_path) : wal_path_(wal_path), fd_(-1) {
+        buffer_.reserve(BUFFER_SIZE);
+
+        // Open with POSIX for proper fsync support
+        // O_WRONLY: write-only
+        // O_CREAT: create if doesn't exist
+        // O_APPEND: all writes go to end (atomic for concurrent readers)
+        // 0644: rw-r--r-- permissions
+        fd_ = open(wal_path_.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0644);
+
+        if (fd_ < 0) {
+            fmt::print(stderr, "ERROR: Failed to open WAL file: {} (errno: {})\n", wal_path_,
+                       strerror(errno));
+        } else {
+            fmt::print("INFO: WAL opened successfully: {} (fd={})\n", wal_path_, fd_);
+        }
+    }
+
+    WalWriter::~WalWriter() {
+        if (fd_ >= 0) {
+            // Ensure all data is written before closing
+            flush();
+            sync();
+            close(fd_);
+            fmt::print("INFO: WAL closed: {}\n", wal_path_);
+        }
+    }
+
+    auto WalWriter::write_put(const core::Key &key, const core::Value &value) -> core::Status {
+        WalRecord record(WalRecordType::Put, key, value);
+        return write_record(record);
+    }
+
+    auto WalWriter::write_delete(const core::Key &key) -> core::Status {
+        WalRecord record(WalRecordType::Delete, key, "");
+        return write_record(record);
+    }
+
+    auto WalWriter::write_checkpoint() -> core::Status {
+        WalRecord record(WalRecordType::Checkpoint, "", "");
+        return write_record(record);
+    }
+
+    auto WalWriter::write_record(const WalRecord &record) -> core::Status {
+        if (fd_ < 0) {
+            return core::Status::IOError("WAL file not open");
+        }
+
+        // Record format: [Type:1][KeyLen:4][Key:?][ValueLen:4][Value:?]
+        uint32_t key_len = static_cast<uint32_t>(record.key.size());
+        uint32_t value_len = static_cast<uint32_t>(record.value.size());
+
+        // Validate sizes
+        if (key_len > core::MAX_KEY_SIZE) {
+            return core::Status::InvalidArgument("Key too large for WAL");
+        }
+        if (value_len > core::MAX_VALUE_SIZE) {
+            return core::Status::InvalidArgument("Value too large for WAL");
+        }
+
+        size_t record_size = 1 + 4 + key_len + 4 + value_len;
+
+        if (buffer_.size() + record_size > BUFFER_SIZE) {
+            auto status = flush_buffer();
+            if (!status.ok())
+                return status;
+        }
+
+        // SERIALIZE TO BUFFER
+        buffer_.push_back(static_cast<char>(record.type));
+
+        buffer_.insert(buffer_.end(), reinterpret_cast<char *>(&key_len),
+                       reinterpret_cast<char *>(&key_len) + 4);
+
+        buffer_.insert(buffer_.end(), record.key.begin(), record.key.end());
+
+        buffer_.insert(buffer_.end(), reinterpret_cast<const char *>(&value_len),
+                       reinterpret_cast<const char *>(&value_len) + 4);
+
+        buffer_.insert(buffer_.end(), record.value.begin(), record.value.end());
+
+        return core::Status::Ok();
+    }
+
+    auto WalWriter::flush_buffer() -> core::Status {
+        if (buffer_.empty()) {
+            return core::Status::Ok();
+        }
+
+        size_t total_written = 0;
+        const size_t total_size = buffer_.size();
+
+        while (total_written < total_size) {
+            const size_t remaining = total_size - total_written;
+            ssize_t n = ::write(fd_, buffer_.data() + total_written, remaining);
+
+            if (n < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                return core::Status::IOError(
+                    fmt::format("Failed to write to WAL: {}", strerror(errno)));
+            }
+            if (n == 0) {
+                // Optional: handle unexpected short write that returns 0
+                return core::Status::IOError("Short write to WAL (wrote 0 bytes)");
+            }
+
+            total_written += static_cast<size_t>(n);
+        }
+
+        buffer_.clear();
+        return core::Status::Ok();
+    }
+
+    auto WalWriter::flush() -> core::Status {
+        // TODO : HANDLE THIS BETTER
+        return flush_buffer();
+    }
+
+    auto WalWriter::sync() -> core::Status {
+        auto status = flush();
+        if (!status.ok())
+            return status;
+
+        if (fd_ < 0) {
+            return core::Status::IOError("WAL file not open");
+        }
+
+        if (fsync(fd_) != 0) {
+            return core::Status::IOError(fmt::format("fsync failed: {}", strerror(errno)));
+        }
+
+        return core::Status::Ok();
+    }
+
+    WalReader::WalReader(const std::string &wal_path)
+        : wal_path_(wal_path), fd_(-1), buffer_pos_(0), buffer_size_(0) {
+        read_buffer_.resize(READ_BUFFER_SIZE);
+
+        fd_ = open(wal_path_.c_str(), O_RDONLY);
+
+        if (fd_ < 0) {
+            fmt::print(stderr, "WARNING: WAL file not found (fresh start): {}\n", wal_path_);
+        } else {
+            fmt::print("INFO: WAL reader opened: {} (fd={})\n", wal_path_, fd_);
+        }
+    }
+
+    WalReader::~WalReader() {
+        if (fd_ >= 0) {
+            close(fd_);
+        }
+    }
+
+    auto WalReader::fill_buffer() -> core::Status {
+        ssize_t n = read(fd_, read_buffer_.data(), READ_BUFFER_SIZE);
+
+        if (n < 0) {
+            return core::Status::IOError(fmt::format("Failed to read WAL: {}", strerror(errno)));
+        }
+
+        if (n == 0) {
+            return core::Status::NotFound("End of WAL");
+        }
+
+        buffer_size_ = static_cast<size_t>(n);
+
+        buffer_pos_ = 0;
+        return core::Status::Ok();
+    }
+
+    auto WalReader::read_bytes(char *dest, size_t n) -> core::Status {
+        size_t total_read = 0;
+        while (total_read < n) {
+            if (buffer_pos_ >= buffer_size_) {
+                auto status = fill_buffer();
+                if (!status.ok()) {
+                    if (status.is_not_found() && total_read > 0) {
+                        return core::Status::Corruption("Partial record at end of WAL");
+                    }
+                    return status;
+                }
+            }
+
+            size_t available = buffer_size_ - buffer_pos_;
+            size_t to_copy = std::min(available, n - total_read);
+
+            memcpy(dest + total_read, read_buffer_.data() + buffer_pos_, to_copy);
+            buffer_pos_ += to_copy;
+            total_read += to_copy;
+        }
+
+        return core::Status::Ok();
+    }
+
+    auto WalReader::read_next(WalRecord &record) -> core::Status {
+        if (fd_ < 0) {
+            return core::Status::IOError("WAL file not open");
+        }
+
+        char type_byte;
+        auto status = read_bytes(&type_byte, 1);
+        if (!status.ok())
+            return status;
+
+        record.type = static_cast<WalRecordType>(type_byte);
+
+        uint32_t key_len;
+        status = read_bytes(reinterpret_cast<char *>(&key_len), 4);
+        if (!status.ok()) {
+            return core::Status::Corruption("Failed to read key length");
+        }
+
+        if (key_len > core::MAX_KEY_SIZE) {
+            return core::Status::Corruption("Key length exceeds maximum");
+        }
+
+        record.key.resize(key_len);
+        if (key_len > 0) {
+            status = read_bytes(&record.key[0], key_len);
+            if (!status.ok()) {
+                return core::Status::Corruption("Failed to read key data");
+            }
+        }
+
+        uint32_t value_len;
+        status = read_bytes(reinterpret_cast<char *>(&value_len), 4);
+        if (!status.ok()) {
+            return core::Status::Corruption("Failed to read value length");
+        }
+
+        if (value_len > core::MAX_VALUE_SIZE) {
+            return core::Status::Corruption("Value length exceeds maximum");
+        }
+
+        record.value.resize(value_len);
+        if (value_len > 0) {
+            status = read_bytes(&record.value[0], value_len);
+            if (!status.ok()) {
+                return core::Status::Corruption("Failed to read value data");
+            }
+        }
+
+        return core::Status::Ok();
+    }
+
+    auto WalReader::has_more() const -> bool {
+        if (buffer_pos_ < buffer_size_) {
+            return true;
+        }
+        // TODO : Cache this, const_cast needed
+        return fd_ >= 0;
+    }
+
+} // namespace embrace::storage
