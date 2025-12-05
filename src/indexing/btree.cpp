@@ -3,6 +3,7 @@
 #include "indexing/btree.hpp"
 #include "indexing/node.hpp"
 #include "storage/wal.hpp"
+#include <cinttypes>
 #include <cstddef>
 #include <fmt/core.h>
 #include <memory>
@@ -90,6 +91,183 @@ namespace embrace::indexing {
 
         return core::Status::Ok();
     }
+
+    auto Btree::update(const core::Key &key, const core::Value &value) -> core::Status {
+        if (wal_writer_ && !recovering_) {
+            auto wal_status = wal_writer_->write_put(key, value);
+            if (!wal_status.ok()) {
+                return wal_status;
+            }
+        }
+
+        LeafNode *leaf = find_leaf(key);
+        int idx = leaf->get_index(key);
+
+        if (idx == -1) {
+            return core::Status::NotFound(fmt::format("Key: '{}' not found for update", key));
+        }
+
+        leaf->values[static_cast<size_t>(idx)] = value;
+        return core::Status::Ok();
+    }
+
+    auto Btree::remove(const core::Key &key) -> core::Status {
+        if (wal_writer_ && !recovering_) {
+            auto wal_status = wal_writer_->write_delete(key);
+            if (!wal_status.ok()) {
+                return wal_status;
+            }
+        }
+        LeafNode *leaf = find_leaf(key);
+        int idx = leaf->get_index(key);
+
+        if (idx == -1) {
+            return core::Status::NotFound(fmt::format("Key: '{}' not found for deletion", key));
+        }
+
+        leaf->keys.erase(leaf->keys.begin() + idx);
+        leaf->values.erase(leaf->values.begin() + idx);
+
+        if (leaf != root_.get() && leaf->keys.size() < get_min_keys()) {
+            rebalance_after_delete(leaf);
+        }
+
+        // empty root: tree shrinks
+        if (root_->is_leaf() && static_cast<LeafNode *>(root_.get())->keys.empty()) {
+            return core::Status::Ok();
+        }
+
+        // If root is internal with one child, make child the new root
+        if (!root_->is_leaf()) {
+            auto *internal_root = static_cast<InternalNode *>(root_.get());
+            if (internal_root->keys.empty() && internal_root->children.size() == 1) {
+                auto new_root = std::move(internal_root->children[0]);
+                new_root->parent = nullptr;
+                root_ = std::move(new_root);
+            }
+        }
+        return core::Status::Ok();
+    }
+
+    auto Btree::rebalance_after_delete(Node *node) -> void {
+        if (node == root_.get()) {
+            return;
+        }
+
+        if (!node->is_leaf()) {
+            handle_underflow_internal(static_cast<InternalNode *>(node));
+            return;
+        }
+
+        auto *leaf = static_cast<LeafNode *>(node);
+        auto *parent = static_cast<InternalNode *>(leaf->parent);
+
+        size_t leaf_idx = 0;
+        for (size_t i = 0; i < parent->children.size(); ++i) {
+            if (parent->children[i].get() == leaf) {
+                leaf_idx = i;
+                break;
+            }
+        }
+
+        // BORROW FROM RIGHT first
+        if (leaf_idx + 1 < parent->children.size()) {
+            auto *right_sibling = static_cast<LeafNode *>(parent->children[leaf_idx + 1].get());
+            if (right_sibling->keys.size() > get_min_keys()) {
+                borrow_from_right(leaf, right_sibling, parent, leaf_idx);
+                return;
+            }
+        }
+
+        // BORROW FROM LEFT
+        if (leaf_idx > 0) {
+            auto *left_sibling = static_cast<LeafNode *>(parent->children[leaf_idx - 1].get());
+            if (left_sibling->keys.size() > get_min_keys()) {
+                borrow_from_left(leaf, left_sibling, parent, leaf_idx);
+            }
+        }
+
+        // Can't borrow, MERGE
+        if (leaf_idx > 0) {
+            auto *left_sibling = static_cast<LeafNode *>(parent->children[leaf_idx - 1].get());
+            merge_with_left(leaf, left_sibling, parent, leaf_idx);
+        } else {
+            auto *right_sibling = static_cast<LeafNode *>(parent->children[leaf_idx + 1].get());
+            merge_with_right(leaf, right_sibling, parent, leaf_idx);
+        }
+    }
+
+    auto Btree::borrow_from_left(LeafNode *node, LeafNode *left_sibling, InternalNode *parent,
+                                 size_t parent_key_idx) -> void {
+        // Move last key-value from left sibling to start of current node
+        node->keys.insert(node->keys.begin(), left_sibling->keys.back());
+        node->values.insert(node->values.begin(), left_sibling->values.back());
+
+        left_sibling->keys.pop_back();
+        left_sibling->values.pop_back();
+
+        parent->keys[parent_key_idx] = node->keys.front();
+    }
+
+    auto Btree::borrow_from_right(LeafNode *node, LeafNode *right_sibling, InternalNode *parent,
+                                  size_t parent_key_idx) -> void {
+        // Move last key-value from left sibling to start of current node
+        node->keys.push_back(right_sibling->keys.front());
+        node->values.push_back(right_sibling->values.front());
+
+        right_sibling->keys.erase(right_sibling->keys.begin());
+        right_sibling->values.erase(right_sibling->values.begin());
+
+        parent->keys[parent_key_idx] = right_sibling->keys.front();
+    }
+
+    auto Btree::merge_with_left(LeafNode *node, LeafNode *left_sibling, InternalNode *parent,
+                                size_t parent_key_idx) -> void {
+        left_sibling->keys.insert(left_sibling->keys.end(), node->keys.begin(), node->keys.end());
+        left_sibling->values.insert(left_sibling->values.end(), node->values.begin(),
+                                    node->values.end());
+
+        left_sibling->next = node->next;
+        if (node->next) {
+            node->next->prev = left_sibling;
+        }
+
+        parent->keys.erase(parent->keys.begin() + static_cast<std::ptrdiff_t>(parent_key_idx));
+        parent->children.erase(parent->children.begin() + static_cast<ptrdiff_t>(parent_key_idx) +
+                               1);
+
+        // check if parent underflows
+        if (parent != root_.get() && parent->keys.size() < get_min_keys()) {
+            rebalance_after_delete(parent);
+        }
+    }
+
+    auto Btree::merge_with_right(LeafNode *node, LeafNode *right_sibling, InternalNode *parent,
+                                 size_t parent_key_idx) -> void {
+        // Merge right sibling into current node
+        node->keys.insert(node->keys.end(), right_sibling->keys.begin(), right_sibling->keys.end());
+        node->values.insert(node->values.end(), right_sibling->values.begin(),
+                            right_sibling->values.end());
+
+        // Update linked list
+        node->next = right_sibling->next;
+        if (right_sibling->next) {
+            right_sibling->next->prev = node;
+        }
+
+        // Remove separator key and child pointer from parent
+        parent->keys.erase(parent->keys.begin() + static_cast<std::ptrdiff_t>(parent_key_idx));
+        parent->children.erase(parent->children.begin() +
+                               static_cast<std::ptrdiff_t>(parent_key_idx) + 1);
+
+        // Check if parent underflows
+        if (parent != root_.get() && parent->keys.size() < get_min_keys()) {
+            rebalance_after_delete(parent);
+        }
+    }
+
+    // TODO : implement this (CRITICAL)
+    auto Btree::handle_underflow_internal(InternalNode *node) -> void {}
 
     auto Btree::split_leaf(LeafNode *leaf) -> void {
         auto new_leaf = std::make_unique<LeafNode>();
