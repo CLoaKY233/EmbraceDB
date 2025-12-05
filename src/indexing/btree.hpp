@@ -15,8 +15,11 @@ namespace embrace::indexing {
         explicit Btree(const std::string &wal_path = "");
         ~Btree();
 
+        // CORE OPS
         [[nodiscard]] auto get(const core::Key &key) -> std::optional<core::Value>;
         [[nodiscard]] auto put(const core::Key &key, const core::Value &value) -> core::Status;
+        [[nodiscard]] auto update(const core::Key &key, const core::Value &value) -> core::Status;
+        [[nodiscard]] auto remove(const core::Key &key) -> core::Status;
 
         auto recover_from_wal() -> core::Status;
         auto flush_wal() -> core::Status;
@@ -41,6 +44,22 @@ namespace embrace::indexing {
 
         auto insert_into_parent(Node *old_child, const core::Key &key,
                                 std::unique_ptr<Node> new_child) -> void;
+
+        auto borrow_from_left(LeafNode *node, LeafNode *left_sibling, InternalNode *parent,
+                              size_t parent_key_idx) -> void;
+        auto borrow_from_right(LeafNode *node, LeafNode *right_sibling, InternalNode *parent,
+                               size_t parent_key_idx) -> void;
+
+        auto merge_with_left(LeafNode *node, LeafNode *left_sibling, InternalNode *parent,
+                             size_t parent_key_idx) -> void;
+        auto merge_with_right(LeafNode *node, LeafNode *right_sibling, InternalNode *parent,
+                              size_t parent_key_idx) -> void;
+
+        auto rebalance_after_delete(Node *node) -> void;
+        auto handle_underflow_internal(InternalNode *node) -> void;
+        [[nodiscard]] auto get_min_keys() const -> size_t {
+            return (max_degree_ + 1) / 2;
+        }
     };
 
 } // namespace embrace::indexing
