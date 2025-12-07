@@ -92,6 +92,12 @@ namespace embrace::indexing {
     }
 
     auto Btree::update(const core::Key &key, const core::Value &value) -> core::Status {
+        LeafNode *leaf = find_leaf(key);
+        int idx = leaf->get_index(key);
+
+        if (idx == -1) {
+            return core::Status::NotFound(fmt::format("Key: '{}' not found for update", key));
+        }
         if (wal_writer_ && !recovering_) {
             auto wal_status = wal_writer_->write_put(key, value);
             if (!wal_status.ok()) {
@@ -99,30 +105,22 @@ namespace embrace::indexing {
             }
         }
 
-        LeafNode *leaf = find_leaf(key);
-        int idx = leaf->get_index(key);
-
-        if (idx == -1) {
-            return core::Status::NotFound(fmt::format("Key: '{}' not found for update", key));
-        }
-
         leaf->values[static_cast<size_t>(idx)] = value;
         return core::Status::Ok();
     }
 
     auto Btree::remove(const core::Key &key) -> core::Status {
-        if (wal_writer_ && !recovering_) {
-            auto wal_status = wal_writer_->write_delete(key);
-            if (!wal_status.ok()) {
-                return wal_status;
-            }
-        }
-
         LeafNode *leaf = find_leaf(key);
         int idx = leaf->get_index(key);
 
         if (idx == -1) {
             return core::Status::NotFound(fmt::format("Key: '{}' not found for deletion", key));
+        }
+        if (wal_writer_ && !recovering_) {
+            auto wal_status = wal_writer_->write_delete(key);
+            if (!wal_status.ok()) {
+                return wal_status;
+            }
         }
 
         leaf->keys.erase(leaf->keys.begin() + idx);
