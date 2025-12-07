@@ -159,6 +159,53 @@ auto main() -> int {
         }
     }
 
+    {
+        fmt::print("\n--- Test 7: UPDATE vs PUT in WAL ---\n");
+        std::remove("embrace.wal");
+
+        {
+            indexing::Btree tree("embrace.wal");
+
+            // Initial PUT
+            tree.put("versioned_key", "v1");
+
+            // UPDATE (should log as Update type)
+            auto status = tree.update("versioned_key", "v2");
+            if (!status.ok()) {
+                fmt::print("✗ UPDATE failed: {}\n", status.to_string());
+                return 1;
+            }
+
+            // Another UPDATE
+            status = tree.update("versioned_key", "v3");
+            if (!status.ok()) {
+                fmt::print("✗ Second UPDATE failed: {}\n", status.to_string());
+                return 1;
+            }
+
+            tree.flush_wal();
+            fmt::print("✓ Written: 1 PUT + 2 UPDATEs to WAL\n");
+        }
+
+        {
+            // Recovery should replay correctly
+            indexing::Btree tree("embrace.wal");
+            auto status = tree.recover_from_wal();
+            if (!status.ok()) {
+                fmt::print("✗ Recovery failed: {}\n", status.to_string());
+                return 1;
+            }
+
+            auto val = tree.get("versioned_key");
+            if (val.has_value() && val.value() == "v3") {
+                fmt::print("✓ Recovery replayed PUT+UPDATEs correctly: {}\n", val.value());
+            } else {
+                fmt::print("✗ Recovery produced wrong value: {}\n", val.value_or("MISSING"));
+                return 1;
+            }
+        }
+    }
+
     fmt::print("\n=== All CRUD tests passed! ===\n");
     return 0;
 }
