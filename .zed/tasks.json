@@ -12,8 +12,56 @@
     "allow_concurrent_runs": false
   },
   {
-    "label": "Run",
+    "label": "Build (Release+Tests)",
+    "command": "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Run Tests (All)",
+    "command": "cd build && ctest --output-on-failure -V",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Run Tests (Fast - Status Only)",
+    "command": "cd build && ctest --output-on-failure -L Status",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Run Tests (B+Tree Tests)",
+    "command": "cd build && ctest --output-on-failure -R BtreeTest",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Run Tests (WAL Tests)",
+    "command": "cd build && ctest --output-on-failure -R WalTest",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Run Tests (Verbose)",
+    "command": "cd build && ./tests/embrace_tests --gtest_filter='*' --gtest_color=yes",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Run App (Main)",
     "command": "./build/embrace",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Run Single Test",
+    "command": "cd build && ./tests/embrace_tests --gtest_filter=BtreeTest.NodeSplitting --gtest_color=yes",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Test Report",
+    "command": "cd build && ctest --output-on-failure --print-labels && echo '' && ctest -R '.*' --output-junit embrace_tests_report.xml",
     "use_new_terminal": true,
     "allow_concurrent_runs": false
   }
