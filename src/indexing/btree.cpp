@@ -2,8 +2,8 @@
 #include "core/status.hpp"
 #include "indexing/btree.hpp"
 #include "indexing/node.hpp"
-#include "storage/wal.hpp"
 #include "log/logger.hpp"
+#include "storage/wal.hpp"
 #include <cstddef>
 #include <fmt/core.h>
 #include <fmt/format.h>
@@ -504,6 +504,10 @@ namespace embrace::indexing {
     }
 
     auto Btree::print_tree() -> void {
+        if (!root_) {
+            LOG_DEBUG("B+tree structure: <empty>");
+            return;
+        }
         std::vector<Node *> current_level;
         current_level.push_back(root_.get());
         std::string tree_output;

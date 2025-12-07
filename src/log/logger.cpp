@@ -30,7 +30,12 @@ namespace embrace::log {
     }
 
     void Logger::init(const LogConfig &config) {
+        if (impl_) {
+            LOG_WARN("Logger already initialized, ignoring duplicate init() call");
+            return; // Already initialized
+        }
         config_ = config;
+        current_level_.store(config.level, std::memory_order_relaxed);
         impl_ = std::make_unique<Impl>();
         if (!config_.file_path.empty()) {
             impl_->log_file.open(config_.file_path, std::ios::out | std::ios::app);
@@ -42,35 +47,35 @@ namespace embrace::log {
     }
 
     void Logger::shutdown() {
-        if (impl_ and impl_->worker_thread.joinable()) {
+        if (impl_ && impl_->worker_thread.joinable()) {
             {
                 std::lock_guard<std::mutex> lock(impl_->queue_mutex);
                 impl_->exit_flag = true;
             }
             impl_->cv.notify_one();
             impl_->worker_thread.join();
-            impl_->worker_thread = std::thread();
         }
 
         if (impl_ && impl_->log_file.is_open()) {
             impl_->log_file.close();
         }
+        impl_.reset();
     }
 
     void Logger::enqueue_log(Level level, const std::source_location &loc, std::string &&msg) {
-        if (!impl_)
+        auto impl = impl_;
+        if (!impl)
             return;
 
         std::filesystem::path full_path(loc.file_name());
         std::string filename = full_path.filename().string();
 
         {
-            std::lock_guard<std::mutex> lock(impl_->queue_mutex);
-            impl_->queue.push_back(LogEntry{level, std::move(filename),
-                                            static_cast<int>(loc.line()), std::move(msg),
-                                            std::chrono::system_clock::now()});
+            std::lock_guard<std::mutex> lock(impl->queue_mutex);
+            impl->queue.push_back(LogEntry{level, std::move(filename), static_cast<int>(loc.line()),
+                                           std::move(msg), std::chrono::system_clock::now()});
         }
-        impl_->cv.notify_one();
+        impl->cv.notify_one();
     }
 
     static auto get_level_color(Level level) -> fmt::text_style {
