@@ -99,7 +99,7 @@ namespace embrace::indexing {
             return core::Status::NotFound(fmt::format("Key: '{}' not found for update", key));
         }
         if (wal_writer_ && !recovering_) {
-            auto wal_status = wal_writer_->write_put(key, value);
+            auto wal_status = wal_writer_->write_update(key, value);
             if (!wal_status.ok()) {
                 return wal_status;
             }
@@ -468,6 +468,27 @@ namespace embrace::indexing {
                     return delete_status;
                 }
                 records_recovered++;
+            } else if (record.type == storage::WalRecordType::Update) {
+                auto update_status = update(record.key, record.value);
+                if (update_status.is_not_found()) {
+                    fmt::print(
+                        "WARN: UPDATE on missing key '{}' during recovery, treating as PUT\n",
+                        record.key);
+
+                    auto put_status = put(record.key, record.value);
+
+                    if (!put_status.ok()) {
+                        return put_status;
+                    }
+                } else if (!update_status.ok()) {
+                    return update_status;
+                }
+                records_recovered++;
+            }
+
+            else if (record.type == storage::WalRecordType::Checkpoint) {
+                // TODO : implement checkpointing
+                fmt::print("INFO: Checkpoint marker found during recovery\n");
             }
         }
 

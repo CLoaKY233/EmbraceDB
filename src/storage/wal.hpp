@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace embrace::storage {
-    enum class WalRecordType : uint8_t { Put = 1, Delete = 2, Checkpoint = 3 };
+    enum class WalRecordType : uint8_t { Put = 1, Delete = 2, Update = 3, Checkpoint = 3 };
 
     struct WalRecord {
         WalRecordType type;
@@ -32,6 +32,7 @@ namespace embrace::storage {
 
         auto write_put(const core::Key &key, const core::Value &value) -> core::Status;
         auto write_delete(const core::Key &key) -> core::Status;
+        auto write_update(const core::Key &key, const core::Value &value) -> core::Status;
         auto write_checkpoint() -> core::Status;
 
         auto flush() -> core::Status;

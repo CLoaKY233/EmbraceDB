@@ -43,6 +43,11 @@ namespace embrace::storage {
         return write_record(record);
     }
 
+    auto WalWriter::write_update(const core::Key &key, const core::Value &value) -> core::Status {
+        WalRecord record(WalRecordType::Update, key, value);
+        return write_record(record);
+    }
+
     auto WalWriter::write_checkpoint() -> core::Status {
         WalRecord record(WalRecordType::Checkpoint, "", "");
         return write_record(record);
@@ -218,7 +223,7 @@ namespace embrace::storage {
         if (!status.ok())
             return status;
 
-        if (type_byte < 1 || type_byte > 3) {
+        if (type_byte < 1 || type_byte > 4) {
             return core::Status::Corruption(
                 fmt::format("Invalid WAL record type: {}", static_cast<int>(type_byte)));
         }
