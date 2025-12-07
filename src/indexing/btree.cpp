@@ -3,7 +3,6 @@
 #include "indexing/btree.hpp"
 #include "indexing/node.hpp"
 #include "storage/wal.hpp"
-#include <cinttypes>
 #include <cstddef>
 #include <fmt/core.h>
 #include <memory>
@@ -20,7 +19,7 @@ namespace embrace::indexing {
 
             if (!wal_writer_->is_open()) {
                 fmt::print(stderr, "WARNING: WAL writer failed to open, continuing without WAL\n");
-                wal_writer_.reset(); // Clear the writer
+                wal_writer_.reset();
             }
         }
     }
@@ -118,6 +117,7 @@ namespace embrace::indexing {
                 return wal_status;
             }
         }
+
         LeafNode *leaf = find_leaf(key);
         int idx = leaf->get_index(key);
 
@@ -132,12 +132,10 @@ namespace embrace::indexing {
             rebalance_after_delete(leaf);
         }
 
-        // empty root: tree shrinks
         if (root_->is_leaf() && static_cast<LeafNode *>(root_.get())->keys.empty()) {
             return core::Status::Ok();
         }
 
-        // If root is internal with one child, make child the new root
         if (!root_->is_leaf()) {
             auto *internal_root = static_cast<InternalNode *>(root_.get());
             if (internal_root->keys.empty() && internal_root->children.size() == 1) {
@@ -170,7 +168,7 @@ namespace embrace::indexing {
             }
         }
 
-        // BORROW FROM RIGHT first
+        // Try borrowing from right sibling first
         if (leaf_idx + 1 < parent->children.size()) {
             auto *right_sibling = static_cast<LeafNode *>(parent->children[leaf_idx + 1].get());
             if (right_sibling->keys.size() > get_min_keys()) {
@@ -179,18 +177,19 @@ namespace embrace::indexing {
             }
         }
 
-        // BORROW FROM LEFT
+        // Try borrowing from left sibling
         if (leaf_idx > 0) {
             auto *left_sibling = static_cast<LeafNode *>(parent->children[leaf_idx - 1].get());
             if (left_sibling->keys.size() > get_min_keys()) {
-                borrow_from_left(leaf, left_sibling, parent, leaf_idx);
+                borrow_from_left(leaf, left_sibling, parent, leaf_idx - 1);
+                return;
             }
         }
 
-        // Can't borrow, MERGE
+        // Can't borrow, must merge
         if (leaf_idx > 0) {
             auto *left_sibling = static_cast<LeafNode *>(parent->children[leaf_idx - 1].get());
-            merge_with_left(leaf, left_sibling, parent, leaf_idx);
+            merge_with_left(leaf, left_sibling, parent, leaf_idx - 1);
         } else {
             auto *right_sibling = static_cast<LeafNode *>(parent->children[leaf_idx + 1].get());
             merge_with_right(leaf, right_sibling, parent, leaf_idx);
@@ -199,7 +198,6 @@ namespace embrace::indexing {
 
     auto Btree::borrow_from_left(LeafNode *node, LeafNode *left_sibling, InternalNode *parent,
                                  size_t parent_key_idx) -> void {
-        // Move last key-value from left sibling to start of current node
         node->keys.insert(node->keys.begin(), left_sibling->keys.back());
         node->values.insert(node->values.begin(), left_sibling->values.back());
 
@@ -211,7 +209,6 @@ namespace embrace::indexing {
 
     auto Btree::borrow_from_right(LeafNode *node, LeafNode *right_sibling, InternalNode *parent,
                                   size_t parent_key_idx) -> void {
-        // Move last key-value from left sibling to start of current node
         node->keys.push_back(right_sibling->keys.front());
         node->values.push_back(right_sibling->values.front());
 
@@ -233,10 +230,9 @@ namespace embrace::indexing {
         }
 
         parent->keys.erase(parent->keys.begin() + static_cast<std::ptrdiff_t>(parent_key_idx));
-        parent->children.erase(parent->children.begin() + static_cast<ptrdiff_t>(parent_key_idx) +
-                               1);
+        parent->children.erase(parent->children.begin() +
+                               static_cast<std::ptrdiff_t>(parent_key_idx) + 1);
 
-        // check if parent underflows
         if (parent != root_.get() && parent->keys.size() < get_min_keys()) {
             rebalance_after_delete(parent);
         }
@@ -244,30 +240,111 @@ namespace embrace::indexing {
 
     auto Btree::merge_with_right(LeafNode *node, LeafNode *right_sibling, InternalNode *parent,
                                  size_t parent_key_idx) -> void {
-        // Merge right sibling into current node
         node->keys.insert(node->keys.end(), right_sibling->keys.begin(), right_sibling->keys.end());
         node->values.insert(node->values.end(), right_sibling->values.begin(),
                             right_sibling->values.end());
 
-        // Update linked list
         node->next = right_sibling->next;
         if (right_sibling->next) {
             right_sibling->next->prev = node;
         }
 
-        // Remove separator key and child pointer from parent
         parent->keys.erase(parent->keys.begin() + static_cast<std::ptrdiff_t>(parent_key_idx));
         parent->children.erase(parent->children.begin() +
                                static_cast<std::ptrdiff_t>(parent_key_idx) + 1);
 
-        // Check if parent underflows
         if (parent != root_.get() && parent->keys.size() < get_min_keys()) {
             rebalance_after_delete(parent);
         }
     }
 
-    // TODO : implement this (CRITICAL)
-    auto Btree::handle_underflow_internal(InternalNode *node) -> void {}
+    auto Btree::handle_underflow_internal(InternalNode *node) -> void {
+        if (node == root_.get()) {
+            return;
+        }
+
+        auto *parent = static_cast<InternalNode *>(node->parent);
+
+        size_t node_idx = 0;
+        for (size_t i = 0; i < parent->children.size(); i++) {
+            if (parent->children[i].get() == node) {
+                node_idx = i;
+                break;
+            }
+        }
+
+        // Try borrowing from right sibling
+        if (node_idx + 1 < parent->children.size()) {
+            auto *right_sib = static_cast<InternalNode *>(parent->children[node_idx + 1].get());
+            if (right_sib->keys.size() > get_min_keys()) {
+                node->keys.push_back(parent->keys[node_idx]);
+                parent->keys[node_idx] = right_sib->keys.front();
+
+                node->children.push_back(std::move(right_sib->children.front()));
+                node->children.back()->parent = node;
+
+                right_sib->keys.erase(right_sib->keys.begin());
+                right_sib->children.erase(right_sib->children.begin());
+                return;
+            }
+        }
+
+        // Try borrowing from left sibling
+        if (node_idx > 0) {
+            auto *left_sib = static_cast<InternalNode *>(parent->children[node_idx - 1].get());
+            if (left_sib->keys.size() > get_min_keys()) {
+                node->keys.insert(node->keys.begin(), parent->keys[node_idx - 1]);
+                parent->keys[node_idx - 1] = left_sib->keys.back();
+
+                node->children.insert(node->children.begin(), std::move(left_sib->children.back()));
+                node->children.front()->parent = node;
+
+                left_sib->keys.pop_back();
+                left_sib->children.pop_back();
+                return;
+            }
+        }
+
+        // Must merge
+        if (node_idx > 0) {
+            auto *left_sib = static_cast<InternalNode *>(parent->children[node_idx - 1].get());
+
+            left_sib->keys.push_back(parent->keys[node_idx - 1]);
+            left_sib->keys.insert(left_sib->keys.end(), node->keys.begin(), node->keys.end());
+
+            for (auto &child : node->children) {
+                child->parent = left_sib;
+                left_sib->children.push_back(std::move(child));
+            }
+
+            parent->keys.erase(parent->keys.begin() + static_cast<std::ptrdiff_t>(node_idx) - 1);
+            parent->children.erase(parent->children.begin() +
+                                   static_cast<std::ptrdiff_t>(node_idx));
+
+            if (parent != root_.get() && parent->keys.size() < get_min_keys()) {
+                rebalance_after_delete(parent);
+            }
+        } else {
+            // Merge with right sibling
+            auto *right_sib = static_cast<InternalNode *>(parent->children[node_idx + 1].get());
+
+            node->keys.push_back(parent->keys[node_idx]);
+            node->keys.insert(node->keys.end(), right_sib->keys.begin(), right_sib->keys.end());
+
+            for (auto &child : right_sib->children) {
+                child->parent = node;
+                node->children.push_back(std::move(child));
+            }
+
+            parent->keys.erase(parent->keys.begin() + static_cast<std::ptrdiff_t>(node_idx));
+            parent->children.erase(parent->children.begin() +
+                                   static_cast<std::ptrdiff_t>(node_idx) + 1);
+
+            if (parent != root_.get() && parent->keys.size() < get_min_keys()) {
+                rebalance_after_delete(parent);
+            }
+        }
+    }
 
     auto Btree::split_leaf(LeafNode *leaf) -> void {
         auto new_leaf = std::make_unique<LeafNode>();
@@ -287,12 +364,10 @@ namespace embrace::indexing {
         core::Key promote_key = new_leaf->keys.front();
 
         insert_into_parent(leaf, promote_key, std::move(new_leaf));
-        // new_leaf is now nullptr - ownership transferred!
     }
 
     auto Btree::insert_into_parent(Node *old_child, const core::Key &key,
                                    std::unique_ptr<Node> new_child) -> void {
-        // Case 1: Root split
         if (old_child == root_.get()) {
             auto new_root = std::make_unique<InternalNode>();
             new_root->keys.push_back(key);
@@ -300,7 +375,6 @@ namespace embrace::indexing {
             new_root->children.push_back(std::move(root_));
             new_root->children.push_back(std::move(new_child));
 
-            // Update parent pointers
             new_root->children[0]->parent = new_root.get();
             new_root->children[1]->parent = new_root.get();
 
@@ -308,17 +382,13 @@ namespace embrace::indexing {
             return;
         }
 
-        // Case 2: Insert into existing parent
         auto *parent = static_cast<InternalNode *>(old_child->parent);
 
         auto it = std::upper_bound(parent->keys.begin(), parent->keys.end(), key);
         auto idx = std::distance(parent->keys.begin(), it);
 
         parent->keys.insert(it, key);
-
         parent->children.insert(parent->children.begin() + idx + 1, std::move(new_child));
-
-        // Update parent pointer
         parent->children[static_cast<size_t>(idx + 1)]->parent = parent;
 
         if (parent->keys.size() >= max_degree_) {
@@ -333,7 +403,6 @@ namespace embrace::indexing {
 
         core::Key promote_key = node->keys[split_idx];
 
-        // Copy keys to new sibling
         new_sibling->keys.assign(node->keys.begin() + split_offset + 1, node->keys.end());
 
         new_sibling->children.reserve(node->children.size() - split_idx - 1);
@@ -342,12 +411,10 @@ namespace embrace::indexing {
             new_sibling->children.push_back(std::move(*it));
         }
 
-        // Update parent pointers
         for (auto &child : new_sibling->children) {
             child->parent = new_sibling.get();
         }
 
-        // Resize original node
         node->keys.resize(split_idx);
         node->children.resize(split_idx + 1);
 
@@ -395,6 +462,12 @@ namespace embrace::indexing {
                 auto put_status = put(record.key, record.value);
                 if (!put_status.ok()) {
                     return put_status;
+                }
+                records_recovered++;
+            } else if (record.type == storage::WalRecordType::Delete) {
+                auto delete_status = remove(record.key);
+                if (!delete_status.ok() && !delete_status.is_not_found()) {
+                    return delete_status;
                 }
                 records_recovered++;
             }
