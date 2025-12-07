@@ -8,7 +8,7 @@
 #include <vector>
 
 namespace embrace::storage {
-    enum class WalRecordType : uint8_t { Put = 1, Delete = 2, Update = 3, Checkpoint = 3 };
+    enum class WalRecordType : uint8_t { Put = 1, Delete = 2, Update = 3, Checkpoint = 4 };
 
     struct WalRecord {
         WalRecordType type;
