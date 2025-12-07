@@ -31,13 +31,13 @@ namespace embrace::log {
         void shutdown();
 
         template <typename... Args>
-        void log(Level level, const std::source_location &loc, fmt::format_string<Args...> fmt,
-                 Args &&...args) {
+        void log(Level level, const std::source_location &loc,
+                 fmt::format_string<Args...> format_str, Args &&...args) {
             if (level < current_level_.load(std::memory_order_relaxed))
                 return;
 
             try {
-                std::string msg = fmt::format(fmt, std::forward<Args>(args)...);
+                std::string msg = fmt::format(format_str, std::forward<Args>(args)...);
                 enqueue_log(level, loc, std::move(msg));
 
             } catch (const std::exception &e) {

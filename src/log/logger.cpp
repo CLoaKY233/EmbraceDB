@@ -36,7 +36,7 @@ namespace embrace::log {
         }
         config_ = config;
         current_level_.store(config.level, std::memory_order_relaxed);
-        impl_ = std::make_unique<Impl>();
+        impl_ = std::make_shared<Impl>();
         if (!config_.file_path.empty()) {
             impl_->log_file.open(config_.file_path, std::ios::out | std::ios::app);
             if (!impl_->log_file.is_open()) {
