@@ -3,8 +3,10 @@
 #include "indexing/btree.hpp"
 #include "indexing/node.hpp"
 #include "storage/wal.hpp"
+#include "log/logger.hpp"
 #include <cstddef>
 #include <fmt/core.h>
+#include <fmt/format.h>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -18,7 +20,8 @@ namespace embrace::indexing {
             wal_writer_ = std::make_unique<storage::WalWriter>(wal_path_);
 
             if (!wal_writer_->is_open()) {
-                fmt::print(stderr, "WARNING: WAL writer failed to open, continuing without WAL\n");
+                LOG_WARN("WAL writer failed to open for path '{}', continuing without WAL",
+                         wal_path_);
                 wal_writer_.reset();
             }
         }
@@ -28,14 +31,12 @@ namespace embrace::indexing {
         if (wal_writer_) {
             auto flush_status = wal_writer_->flush();
             if (!flush_status.ok()) {
-                fmt::print(stderr, "ERROR: WAL flush failed in destructor: {}\n",
-                           flush_status.to_string());
+                LOG_ERROR("WAL flush failed in destructor: {}", flush_status.to_string());
             }
 
             auto sync_status = wal_writer_->sync();
             if (!sync_status.ok()) {
-                fmt::print(stderr, "ERROR: WAL sync failed in destructor: {}\n",
-                           sync_status.to_string());
+                LOG_ERROR("WAL sync failed in destructor: {}", sync_status.to_string());
             }
         }
     }
@@ -471,9 +472,8 @@ namespace embrace::indexing {
             } else if (record.type == storage::WalRecordType::Update) {
                 auto update_status = update(record.key, record.value);
                 if (update_status.is_not_found()) {
-                    fmt::print(
-                        "WARN: UPDATE on missing key '{}' during recovery, treating as PUT\n",
-                        record.key);
+                    LOG_WARN("UPDATE on missing key '{}' during recovery, treating as PUT",
+                             record.key);
 
                     auto put_status = put(record.key, record.value);
 
@@ -488,11 +488,11 @@ namespace embrace::indexing {
 
             else if (record.type == storage::WalRecordType::Checkpoint) {
                 // TODO : implement checkpointing
-                fmt::print("INFO: Checkpoint marker found during recovery\n");
+                LOG_INFO("Checkpoint marker found during recovery");
             }
         }
 
-        fmt::print("Recovery complete: {} records replayed from WAL\n", records_recovered);
+        LOG_INFO("Recovery complete: {} records replayed from WAL", records_recovered);
         return core::Status::Ok();
     }
 
@@ -506,27 +506,32 @@ namespace embrace::indexing {
     auto Btree::print_tree() -> void {
         std::vector<Node *> current_level;
         current_level.push_back(root_.get());
+        std::string tree_output;
 
         while (!current_level.empty()) {
             std::vector<Node *> next_level;
+            fmt::memory_buffer level_buf;
+
             for (auto *node : current_level) {
-                fmt::print("[ ");
+                fmt::format_to(std::back_inserter(level_buf), "[ ");
                 if (node->is_leaf()) {
                     auto *leaf = static_cast<LeafNode *>(node);
                     for (const auto &k : leaf->keys)
-                        fmt::print("{} ", k);
+                        fmt::format_to(std::back_inserter(level_buf), "{} ", k);
                 } else {
                     auto *internal = static_cast<InternalNode *>(node);
                     for (const auto &k : internal->keys)
-                        fmt::print("{} ", k);
+                        fmt::format_to(std::back_inserter(level_buf), "{} ", k);
 
                     for (auto &child : internal->children)
                         next_level.push_back(child.get());
                 }
-                fmt::print("] ");
+                fmt::format_to(std::back_inserter(level_buf), "] ");
             }
-            fmt::print("\n");
+            fmt::format_to(std::back_inserter(level_buf), "\n");
+            tree_output.append(level_buf.begin(), level_buf.end());
             current_level = next_level;
         }
+        LOG_DEBUG("B+tree structure:\n{}", tree_output);
     }
 } // namespace embrace::indexing

@@ -1,10 +1,10 @@
 #include "log/logger.hpp"
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <deque>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <mutex>
 #include <source_location>
 #include <thread>
@@ -35,7 +35,7 @@ namespace embrace::log {
         if (!config_.file_path.empty()) {
             impl_->log_file.open(config_.file_path, std::ios::out | std::ios::app);
             if (!impl_->log_file.is_open()) {
-                fmt::print(stderr, "Failed to open log file: {}", config_.file_path);
+                std::fprintf(stderr, "Failed to open log file: %s\n", config_.file_path.c_str());
             }
         }
         impl_->worker_thread = std::thread(&Logger::worker_loop, this);
