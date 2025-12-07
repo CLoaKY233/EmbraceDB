@@ -1,6 +1,7 @@
 #include "core/common.hpp"
 #include "core/status.hpp"
 #include "storage/wal.hpp"
+#include "log/logger.hpp"
 
 #include <cerrno>
 #include <cstdio>
@@ -17,10 +18,9 @@ namespace embrace::storage {
         fd_ = open(wal_path_.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0600);
 
         if (fd_ < 0) {
-            fmt::print(stderr, "ERROR: Failed to open WAL file: {} (errno: {})\n", wal_path_,
-                       strerror(errno));
+            LOG_ERROR("Failed to open WAL file: {} (errno: {})", wal_path_, strerror(errno));
         } else {
-            fmt::print("INFO: WAL opened successfully: {} (fd={})\n", wal_path_, fd_);
+            LOG_INFO("WAL opened successfully: {} (fd={})", wal_path_, fd_);
         }
     }
 
@@ -29,7 +29,7 @@ namespace embrace::storage {
             flush();
             sync();
             close(fd_);
-            fmt::print("INFO: WAL closed: {}\n", wal_path_);
+            LOG_INFO("WAL closed: {}", wal_path_);
         }
     }
 
@@ -150,9 +150,9 @@ namespace embrace::storage {
         fd_ = open(wal_path_.c_str(), O_RDONLY);
 
         if (fd_ < 0) {
-            fmt::print(stderr, "INFO: WAL file not found (fresh start): {}\n", wal_path_);
+            LOG_INFO("WAL file not found (fresh start): {}", wal_path_);
         } else {
-            fmt::print("INFO: WAL reader opened: {} (fd={})\n", wal_path_, fd_);
+            LOG_INFO("WAL reader opened: {} (fd={})", wal_path_, fd_);
         }
     }
 
