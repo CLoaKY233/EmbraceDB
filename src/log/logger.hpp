@@ -1,10 +1,12 @@
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <fmt/chrono.h>
 #include <fmt/color.h>
 #include <fmt/core.h>
 #include <memory>
+#include <mutex>
 #include <source_location>
 #include <string>
 
@@ -14,7 +16,7 @@ namespace embrace::log {
 
     struct LogConfig {
         Level level = Level::Info;
-        bool console_output = true;
+        bool console_output = true; // Must not be modified after init()
         std::string file_path = ""; // empty for no file output
     };
 
@@ -31,7 +33,7 @@ namespace embrace::log {
         template <typename... Args>
         void log(Level level, const std::source_location &loc, fmt::format_string<Args...> fmt,
                  Args &&...args) {
-            if (level < config_.level)
+            if (level < current_level_.load(std::memory_order_relaxed))
                 return;
 
             try {
@@ -44,7 +46,12 @@ namespace embrace::log {
         }
 
         void set_level(Level level) {
-            config_.level = level;
+            current_level_.store(level, std::memory_order_relaxed);
+            config_.level = level; // Keep config in sync
+        }
+
+        bool is_initialized() const {
+            return static_cast<bool>(impl_);
         }
 
       private:
@@ -62,32 +69,62 @@ namespace embrace::log {
         void enqueue_log(Level level, const std::source_location &loc, std::string &&msg);
         void worker_loop();
 
+        mutable std::once_flag shutdown_flag_;
         struct Impl;
-        std::unique_ptr<Impl> impl_;
+        std::shared_ptr<Impl> impl_;
+        std::atomic<Level> current_level_{Level::Info};
         LogConfig config_;
     };
 } // namespace embrace::log
 
 #define LOG_TRACE(...)                                                                             \
-    ::embrace::log::Logger::instance().log(::embrace::log::Level::Trace,                           \
-                                           std::source_location::current(), __VA_ARGS__)
+    do {                                                                                           \
+        auto &logger = ::embrace::log::Logger::instance();                                         \
+        if (logger.is_initialized()) {                                                             \
+            logger.log(::embrace::log::Level::Trace, std::source_location::current(),              \
+                       __VA_ARGS__);                                                               \
+        }                                                                                          \
+    } while (0)
 
 #define LOG_DEBUG(...)                                                                             \
-    ::embrace::log::Logger::instance().log(::embrace::log::Level::Debug,                           \
-                                           std::source_location::current(), __VA_ARGS__)
+    do {                                                                                           \
+        auto &logger = ::embrace::log::Logger::instance();                                         \
+        if (logger.is_initialized()) {                                                             \
+            logger.log(::embrace::log::Level::Debug, std::source_location::current(),              \
+                       __VA_ARGS__);                                                               \
+        }                                                                                          \
+    } while (0)
 
 #define LOG_INFO(...)                                                                              \
-    ::embrace::log::Logger::instance().log(::embrace::log::Level::Info,                            \
-                                           std::source_location::current(), __VA_ARGS__)
+    do {                                                                                           \
+        auto &logger = ::embrace::log::Logger::instance();                                         \
+        if (logger.is_initialized()) {                                                             \
+            logger.log(::embrace::log::Level::Info, std::source_location::current(), __VA_ARGS__); \
+        }                                                                                          \
+    } while (0)
 
 #define LOG_WARN(...)                                                                              \
-    ::embrace::log::Logger::instance().log(::embrace::log::Level::Warn,                            \
-                                           std::source_location::current(), __VA_ARGS__)
+    do {                                                                                           \
+        auto &logger = ::embrace::log::Logger::instance();                                         \
+        if (logger.is_initialized()) {                                                             \
+            logger.log(::embrace::log::Level::Warn, std::source_location::current(), __VA_ARGS__); \
+        }                                                                                          \
+    } while (0)
 
 #define LOG_ERROR(...)                                                                             \
-    ::embrace::log::Logger::instance().log(::embrace::log::Level::Error,                           \
-                                           std::source_location::current(), __VA_ARGS__)
+    do {                                                                                           \
+        auto &logger = ::embrace::log::Logger::instance();                                         \
+        if (logger.is_initialized()) {                                                             \
+            logger.log(::embrace::log::Level::Error, std::source_location::current(),              \
+                       __VA_ARGS__);                                                               \
+        }                                                                                          \
+    } while (0)
 
 #define LOG_FATAL(...)                                                                             \
-    ::embrace::log::Logger::instance().log(::embrace::log::Level::Fatal,                           \
-                                           std::source_location::current(), __VA_ARGS__)
+    do {                                                                                           \
+        auto &logger = ::embrace::log::Logger::instance();                                         \
+        if (logger.is_initialized()) {                                                             \
+            logger.log(::embrace::log::Level::Fatal, std::source_location::current(),              \
+                       __VA_ARGS__);                                                               \
+        }                                                                                          \
+    } while (0)

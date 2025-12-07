@@ -1,13 +1,13 @@
 #include "core/common.hpp"
 #include "core/status.hpp"
-#include "storage/wal.hpp"
 #include "log/logger.hpp"
-
+#include "storage/wal.hpp"
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <fmt/core.h>
+#include <string>
 #include <unistd.h>
 
 namespace embrace::storage {
@@ -18,9 +18,12 @@ namespace embrace::storage {
         fd_ = open(wal_path_.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0600);
 
         if (fd_ < 0) {
-            LOG_ERROR("Failed to open WAL file: {} (errno: {})", wal_path_, strerror(errno));
-        } else {
-            LOG_INFO("WAL opened successfully: {} (fd={})", wal_path_, fd_);
+            if (errno == ENOENT) {
+                LOG_INFO("WAL file not found (fresh start): {}", wal_path_);
+            } else {
+                LOG_ERROR("Failed to open WAL file for reading: {} (errno: {})", wal_path_,
+                          strerror(errno));
+            }
         }
     }
 
@@ -29,7 +32,7 @@ namespace embrace::storage {
             flush();
             sync();
             close(fd_);
-            LOG_INFO("WAL closed: {}", wal_path_);
+            std::fprintf(stderr, "WAL closed: %s\n", wal_path_.c_str());
         }
     }
 
