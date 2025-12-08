@@ -595,8 +595,8 @@ namespace embrace::indexing {
             return core::Status::InvalidArgument("Snapshotter not initialized");
         }
 
-        const auto checkpoint_start = std::chrono::steady_clock::now();
         LOG_INFO("Creating checkpoint at operation {} for WAL '{}'", operation_count_, wal_path_);
+        const auto checkpoint_start = std::chrono::steady_clock::now();
 
         auto status = snapshotter_->create_snapshot(*this);
         if (!status.ok()) {
