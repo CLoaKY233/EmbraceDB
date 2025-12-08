@@ -1,5 +1,11 @@
 [
   {
+    "label": "Clean Build Directory",
+    "command": "rm -rf build",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
     "label": "Build (Release)",
     "command": "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build",
     "use_new_terminal": false,
