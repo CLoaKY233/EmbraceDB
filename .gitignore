@@ -1,8 +1,7 @@
 # Build output
 /build/
 
-# Zed editor-specific files
-/.zed/
+
 /.cache/
 **.wal
 **.log

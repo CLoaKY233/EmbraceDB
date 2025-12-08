@@ -1,0 +1,20 @@
+[
+  {
+    "label": "Build (Release)",
+    "command": "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Build (Debug)",
+    "command": "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false
+  },
+  {
+    "label": "Run",
+    "command": "./build/embrace",
+    "use_new_terminal": true,
+    "allow_concurrent_runs": false
+  }
+]
