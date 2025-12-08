@@ -171,6 +171,16 @@ namespace embrace::indexing {
                 root_ = std::move(new_root);
             }
         }
+
+        if (!recovering_) {
+            operation_count_++;
+            if (checkpoint_interval_ > 0 && operation_count_ % checkpoint_interval_ == 0) {
+                auto ckpt_status = create_checkpoint();
+                if (!ckpt_status.ok()) {
+                    LOG_WARN("Auto-checkpoint failed: {}", ckpt_status.to_string());
+                }
+            }
+        }
         return core::Status::Ok();
     }
 
@@ -589,11 +599,11 @@ namespace embrace::indexing {
 
             wal_writer_.reset();
 
-            int fd = ::open(wal_path_.c_str(), O_WRONLY | O_TRUNC);
+            int fd = ::open(wal_path_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
             if (fd >= 0) {
                 ::close(fd);
             } else {
-                LOG_WARN("Failed to truncate WAL file");
+                LOG_ERROR("Failed to truncate WAL file: {}", strerror(errno));
             }
 
             wal_writer_ = std::make_unique<storage::WalWriter>(wal_path_);

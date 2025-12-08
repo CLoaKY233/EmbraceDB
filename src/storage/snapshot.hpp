@@ -3,6 +3,7 @@
 #include "core/status.hpp"
 #include <cstdint>
 #include <string>
+#include <unistd.h>
 
 namespace embrace::indexing {
     class Btree;
