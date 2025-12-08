@@ -482,7 +482,6 @@ namespace embrace::indexing {
 
         if (snapshotter_ and snapshotter_->exists()) {
             LOG_INFO("Starting recovery: loading snapshot then replaying WAL '{}'", wal_path_);
-            LOG_INFO("Loading snapshot before WAL replay");
             auto status = snapshotter_->load_snapshot(*this);
             if (!status.ok()) {
                 LOG_ERROR("Snapshot load failed: {}", status.to_string());
@@ -553,10 +552,9 @@ namespace embrace::indexing {
             }
         }
 
-        const auto elapsed_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
-                                                                  recovery_start)
-                .count();
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - recovery_start)
+                                    .count();
 
         LOG_INFO("WAL recovery complete: path='{}', records_replayed={}, elapsed_ms={}", wal_path_,
                  records_recovered, elapsed_ms);
