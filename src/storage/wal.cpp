@@ -137,12 +137,17 @@ namespace embrace::storage {
         const size_t pending_bytes = buffer_.size();
         const auto flush_start = std::chrono::steady_clock::now();
         auto status = flush_buffer();
-        if (status.ok() && pending_bytes > 0) {
+        if (pending_bytes > 0) {
             const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                         std::chrono::steady_clock::now() - flush_start)
                                         .count();
-            LOG_DEBUG("WAL flush completed: path='{}', bytes={}, elapsed_ms={}", wal_path_,
-                      pending_bytes, elapsed_ms);
+            if (status.ok()) {
+                LOG_DEBUG("WAL flush completed: path='{}', bytes={}, elapsed_ms={}", wal_path_,
+                          pending_bytes, elapsed_ms);
+            } else {
+                LOG_ERROR("WAL flush failed: path='{}', bytes={}, elapsed_ms={}, error='{}'", wal_path_,
+                          pending_bytes, elapsed_ms, status.ToString());
+            }
         }
         return status;
     }
