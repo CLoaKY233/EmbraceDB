@@ -11,7 +11,7 @@ auto main() -> int {
     config.file_path = "embrace.log";
     log::Logger::instance().init(config);
 
-    LOG_INFO("=== EmbraceDB - Checkpointing Test ===\");
+    LOG_INFO("=== EmbraceDB - Checkpointing Test ===");
 
     std::remove("embrace.wal");
     std::remove("embrace.wal.snapshot");
