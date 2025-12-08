@@ -31,7 +31,7 @@ namespace embrace::log {
 
     void Logger::init(const LogConfig &config) {
         if (impl_) {
-            LOG_WARN("Logger already initialized, ignoring duplicate init() call");
+            LOG_WARN("Logger already initialized; duplicate init() ignored");
             return; // Already initialized
         }
         config_ = config;

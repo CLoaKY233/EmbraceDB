@@ -4,6 +4,7 @@
 #include "indexing/node.hpp"
 #include "log/logger.hpp"
 #include "storage/wal.hpp"
+#include <chrono>
 #include <cstddef>
 #include <fcntl.h>
 #include <fmt/core.h>
@@ -25,7 +26,7 @@ namespace embrace::indexing {
             wal_writer_ = std::make_unique<storage::WalWriter>(wal_path_);
 
             if (!wal_writer_->is_open()) {
-                LOG_WARN("WAL writer failed to open for path '{}', continuing without WAL",
+                LOG_WARN("WAL writer open failed for '{}'; durability disabled for this instance",
                          wal_path_);
                 wal_writer_.reset();
             }
@@ -99,7 +100,7 @@ namespace embrace::indexing {
             if (checkpoint_interval_ > 0 && operation_count_ % checkpoint_interval_ == 0) {
                 auto ckpt_status = create_checkpoint();
                 if (!ckpt_status.ok()) {
-                    LOG_WARN("Auto-checkpoint failed: {}", ckpt_status.to_string());
+                    LOG_WARN("Auto-checkpoint attempt failed: {}", ckpt_status.to_string());
 
                     // NOT FAILING OP HERE
                 }
@@ -130,7 +131,7 @@ namespace embrace::indexing {
             if (checkpoint_interval_ > 0 && operation_count_ % checkpoint_interval_ == 0) {
                 auto ckpt_status = create_checkpoint();
                 if (!ckpt_status.ok()) {
-                    LOG_WARN("Auto-checkpoint failed: {}", ckpt_status.to_string());
+                    LOG_WARN("Auto-checkpoint attempt failed: {}", ckpt_status.to_string());
                 }
             }
         }
@@ -177,7 +178,7 @@ namespace embrace::indexing {
             if (checkpoint_interval_ > 0 && operation_count_ % checkpoint_interval_ == 0) {
                 auto ckpt_status = create_checkpoint();
                 if (!ckpt_status.ok()) {
-                    LOG_WARN("Auto-checkpoint failed: {}", ckpt_status.to_string());
+                    LOG_WARN("Auto-checkpoint attempt failed: {}", ckpt_status.to_string());
                 }
             }
         }
@@ -462,10 +463,13 @@ namespace embrace::indexing {
 
     auto Btree::recover_from_wal() -> core::Status {
         if (wal_path_.empty()) {
+            LOG_DEBUG("WAL recovery skipped: no WAL path configured");
             return core::Status::Ok();
         }
 
         recovering_ = true;
+        LOG_INFO("Starting WAL recovery: path='{}'", wal_path_);
+        const auto recovery_start = std::chrono::steady_clock::now();
 
         struct RecoveryGuard {
             bool &flag;
@@ -477,7 +481,8 @@ namespace embrace::indexing {
         RecoveryGuard guard(recovering_);
 
         if (snapshotter_ and snapshotter_->exists()) {
-            LOG_INFO("Loading snapshot...");
+            LOG_INFO("Starting recovery: loading snapshot then replaying WAL '{}'", wal_path_);
+            LOG_INFO("Loading snapshot before WAL replay");
             auto status = snapshotter_->load_snapshot(*this);
             if (!status.ok()) {
                 LOG_ERROR("Snapshot load failed: {}", status.to_string());
@@ -494,6 +499,11 @@ namespace embrace::indexing {
 
         size_t records_recovered = 0;
         storage::WalRecord record;
+        auto maybe_log_progress = [&](size_t count) {
+            if (count != 0 && count % 1000 == 0) {
+                LOG_DEBUG("WAL recovery progress: {} records replayed", count);
+            }
+        };
 
         while (reader.has_more()) {
             auto status = reader.read_next(record);
@@ -512,12 +522,14 @@ namespace embrace::indexing {
                     return put_status;
                 }
                 records_recovered++;
+                maybe_log_progress(records_recovered);
             } else if (record.type == storage::WalRecordType::Delete) {
                 auto delete_status = remove(record.key);
                 if (!delete_status.ok() && !delete_status.is_not_found()) {
                     return delete_status;
                 }
                 records_recovered++;
+                maybe_log_progress(records_recovered);
             } else if (record.type == storage::WalRecordType::Update) {
                 auto update_status = update(record.key, record.value);
                 if (update_status.is_not_found()) {
@@ -533,14 +545,21 @@ namespace embrace::indexing {
                     return update_status;
                 }
                 records_recovered++;
+                maybe_log_progress(records_recovered);
             }
 
             else if (record.type == storage::WalRecordType::Checkpoint) {
-                LOG_INFO("Checkpoint marker found during recovery");
+                LOG_DEBUG("Checkpoint marker found during recovery");
             }
         }
 
-        LOG_INFO("WAL recovery complete: {} records replayed", records_recovered);
+        const auto elapsed_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() -
+                                                                  recovery_start)
+                .count();
+
+        LOG_INFO("WAL recovery complete: path='{}', records_replayed={}, elapsed_ms={}", wal_path_,
+                 records_recovered, elapsed_ms);
         return core::Status::Ok();
     }
 
@@ -578,7 +597,8 @@ namespace embrace::indexing {
             return core::Status::InvalidArgument("Snapshotter not initialized");
         }
 
-        LOG_INFO("Creating checkpoint at operation {}", operation_count_);
+        const auto checkpoint_start = std::chrono::steady_clock::now();
+        LOG_INFO("Creating checkpoint at operation {} for WAL '{}'", operation_count_, wal_path_);
 
         auto status = snapshotter_->create_snapshot(*this);
         if (!status.ok()) {
@@ -609,7 +629,11 @@ namespace embrace::indexing {
             wal_writer_ = std::make_unique<storage::WalWriter>(wal_path_);
         }
 
-        LOG_INFO("Checkpoint complete, WAL truncated");
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - checkpoint_start)
+                                    .count();
+
+        LOG_INFO("Checkpoint complete: WAL '{}' truncated in {} ms", wal_path_, elapsed_ms);
         return core::Status::Ok();
     }
 

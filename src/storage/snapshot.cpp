@@ -4,6 +4,7 @@
 #include "log/logger.hpp"
 #include "storage/checksum.hpp"
 #include "storage/snapshot.hpp"
+#include <chrono>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -89,6 +90,7 @@ namespace embrace::storage {
     auto Snapshotter::create_snapshot(const indexing::Btree &tree) -> core::Status {
         std::string temp_path = snapshot_path_ + ".tmp";
 
+        const auto snapshot_start = std::chrono::steady_clock::now();
         int fd = ::open(temp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
 
         if (fd < 0) {
@@ -175,7 +177,12 @@ namespace embrace::storage {
                 fmt::format("Failed to rename snapshot: {}", strerror(errno)));
         }
 
-        LOG_INFO("Snapshot created successfully: {} entries", entry_count);
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - snapshot_start)
+                                    .count();
+
+        LOG_INFO("Snapshot created successfully: path='{}', entries={}, elapsed_ms={}",
+                 snapshot_path_, entry_count, elapsed_ms);
         return core::Status::Ok();
     }
 
@@ -202,9 +209,11 @@ namespace embrace::storage {
 
     auto Snapshotter::load_snapshot(indexing::Btree &tree) -> core::Status {
         if (!exists()) {
+            LOG_DEBUG("Snapshot not found; skipping load for path='{}'", snapshot_path_);
             return core::Status::Ok();
         }
 
+        const auto load_start = std::chrono::steady_clock::now();
         int fd = ::open(snapshot_path_.c_str(), O_RDONLY);
         if (fd < 0) {
             return core::Status::IOError(
@@ -279,7 +288,12 @@ namespace embrace::storage {
             }
         }
 
-        LOG_INFO("Snapshot loaded successfully: {} entries", entry_count);
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - load_start)
+                                    .count();
+
+        LOG_INFO("Snapshot loaded successfully: path='{}', entries={}, elapsed_ms={}",
+                 snapshot_path_, entry_count, elapsed_ms);
         return core::Status::Ok();
     }
 } // namespace embrace::storage
