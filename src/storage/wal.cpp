@@ -3,8 +3,8 @@
 #include "log/logger.hpp"
 #include "storage/checksum.hpp"
 #include "storage/wal.hpp"
-#include <chrono>
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -145,8 +145,8 @@ namespace embrace::storage {
                 LOG_DEBUG("WAL flush completed: path='{}', bytes={}, elapsed_ms={}", wal_path_,
                           pending_bytes, elapsed_ms);
             } else {
-                LOG_ERROR("WAL flush failed: path='{}', bytes={}, elapsed_ms={}, error='{}'", wal_path_,
-                          pending_bytes, elapsed_ms, status.ToString());
+                LOG_ERROR("WAL flush failed: path='{}', bytes={}, elapsed_ms={}, error='{}'",
+                          wal_path_, pending_bytes, elapsed_ms, status.to_string());
             }
         }
         return status;
@@ -155,14 +155,30 @@ namespace embrace::storage {
     auto WalWriter::sync() -> core::Status {
         const auto sync_start = std::chrono::steady_clock::now();
         auto status = flush();
-        if (!status.ok())
+        if (!status.ok()) {
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - sync_start)
+                                        .count();
+            LOG_ERROR("WAL sync failed during flush: path='{}', elapsed_ms={}, error='{}'",
+                      wal_path_, elapsed_ms, status.to_string());
             return status;
+        }
 
         if (fd_ < 0) {
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - sync_start)
+                                        .count();
+            LOG_ERROR("WAL sync failed: path='{}', elapsed_ms={}, error='file not open'", wal_path_,
+                      elapsed_ms);
             return core::Status::IOError("WAL file not open");
         }
 
         if (fsync(fd_) != 0) {
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - sync_start)
+                                        .count();
+            LOG_ERROR("WAL sync failed: path='{}', elapsed_ms={}, error='{}'", wal_path_,
+                      elapsed_ms, strerror(errno));
             return core::Status::IOError(fmt::format("fsync failed: {}", strerror(errno)));
         }
 
