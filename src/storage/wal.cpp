@@ -1,6 +1,7 @@
 #include "core/common.hpp"
 #include "core/status.hpp"
 #include "log/logger.hpp"
+#include "storage/checksum.hpp"
 #include "storage/wal.hpp"
 #include <cerrno>
 #include <cstdio>
@@ -75,20 +76,28 @@ namespace embrace::storage {
             return core::Status::InvalidArgument("Value too large for WAL");
         }
 
-        size_t record_size = 1 + 4 + key_len + 4 + value_len;
+        size_t record_size = 1 + 4 + key_len + 4 + value_len + 4;
 
         if (buffer_.size() + record_size > BUFFER_SIZE) {
             auto status = flush_buffer();
-            if (!status.ok())
+            if (!status.ok()) {
                 return status;
+            }
         }
 
-        // Serialize to buffer (little-endian for portability)
-        buffer_.push_back(static_cast<char>(record.type));
-        write_le32(buffer_, key_len);
-        buffer_.insert(buffer_.end(), record.key.begin(), record.key.end());
-        write_le32(buffer_, value_len);
-        buffer_.insert(buffer_.end(), record.value.begin(), record.value.end());
+        std::vector<char> temp_record;
+        temp_record.reserve(record_size - 4);
+
+        temp_record.push_back(static_cast<char>(record.type));
+        write_le32(temp_record, key_len);
+        temp_record.insert(temp_record.end(), record.key.begin(), record.key.end());
+        write_le32(temp_record, value_len);
+        temp_record.insert(temp_record.end(), record.value.begin(), record.value.end());
+
+        uint32_t crc = compute_crc32(temp_record.data(), temp_record.size());
+
+        buffer_.insert(buffer_.end(), temp_record.begin(), temp_record.end());
+        write_le32(buffer_, crc);
 
         return core::Status::Ok();
     }
@@ -218,6 +227,8 @@ namespace embrace::storage {
             return core::Status::NotFound("WAL file not open");
         }
 
+        std::vector<char> record_data;
+
         char type_byte;
         auto status = read_bytes(&type_byte, 1);
         if (!status.ok())
@@ -229,14 +240,15 @@ namespace embrace::storage {
         }
 
         record.type = static_cast<WalRecordType>(type_byte);
+        record_data.push_back(type_byte);
 
-        // Read key length (little-endian)
         char len_buf[4];
         status = read_bytes(len_buf, 4);
         if (!status.ok()) {
             return core::Status::Corruption("Failed to read key length");
         }
         uint32_t key_len = read_le32(len_buf);
+        record_data.insert(record_data.end(), len_buf, len_buf + 4);
 
         if (key_len > core::MAX_KEY_SIZE) {
             return core::Status::Corruption("Key length exceeds maximum");
@@ -248,14 +260,15 @@ namespace embrace::storage {
             if (!status.ok()) {
                 return core::Status::Corruption("Failed to read key data");
             }
+            record_data.insert(record_data.end(), record.key.begin(), record.key.end());
         }
 
-        // Read value length (little-endian)
         status = read_bytes(len_buf, 4);
         if (!status.ok()) {
             return core::Status::Corruption("Failed to read value length");
         }
         uint32_t value_len = read_le32(len_buf);
+        record_data.insert(record_data.end(), len_buf, len_buf + 4);
 
         if (value_len > core::MAX_VALUE_SIZE) {
             return core::Status::Corruption("Value length exceeds maximum");
@@ -267,6 +280,20 @@ namespace embrace::storage {
             if (!status.ok()) {
                 return core::Status::Corruption("Failed to read value data");
             }
+            record_data.insert(record_data.end(), record.value.begin(), record.value.end());
+        }
+
+        status = read_bytes(len_buf, 4);
+        if (!status.ok()) {
+            return core::Status::Corruption("Failed to read CRC32");
+        }
+        uint32_t stored_crc = read_le32(len_buf);
+
+        uint32_t computed_crc = compute_crc32(record_data.data(), record_data.size());
+        if (stored_crc != computed_crc) {
+            return core::Status::Corruption(
+                fmt::format("CRC mismatch in WAL record (stored: {:#x}, computed: {:#x})",
+                            stored_crc, computed_crc));
         }
 
         return core::Status::Ok();
