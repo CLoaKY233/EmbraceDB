@@ -77,6 +77,14 @@ namespace embrace::log {
     };
 } // namespace embrace::log
 
+// Logging level guidance (default Level::Info in production)
+// - Trace: extremely verbose internals (per-record/per-node); usually off.
+// - Debug: diagnostics and timings safe to disable in production.
+// - Info: lifecycle milestones (startup, recovery, checkpoints) and success summaries.
+// - Warn: unexpected but tolerated conditions; action may be required.
+// - Error: operation failed; durability or availability likely impacted.
+// - Fatal: process cannot continue; expect termination/abort.
+
 #define LOG_TRACE(...)                                                                             \
     do {                                                                                           \
         auto &logger = ::embrace::log::Logger::instance();                                         \

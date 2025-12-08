@@ -4,6 +4,7 @@
 #include "storage/checksum.hpp"
 #include "storage/wal.hpp"
 #include <cerrno>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -19,9 +20,9 @@ namespace embrace::storage {
         fd_ = open(wal_path_.c_str(), O_WRONLY | O_CREAT | O_APPEND, 0600);
 
         if (fd_ < 0) {
-            LOG_ERROR("Failed to open WAL file: {} (errno: {})", wal_path_, strerror(errno));
+            LOG_ERROR("Failed to open WAL file '{}': {}", wal_path_, strerror(errno));
         } else {
-            LOG_INFO("WAL opened successfully: {} (fd={})", wal_path_, fd_);
+            LOG_INFO("WAL opened: path='{}', fd={}", wal_path_, fd_);
         }
     }
 
@@ -30,7 +31,7 @@ namespace embrace::storage {
             flush();
             sync();
             close(fd_);
-            LOG_INFO("WAL closed: {}", wal_path_);
+            LOG_DEBUG("WAL writer closed: path='{}'", wal_path_);
         }
     }
 
@@ -133,22 +134,59 @@ namespace embrace::storage {
     }
 
     auto WalWriter::flush() -> core::Status {
-        return flush_buffer();
+        const size_t pending_bytes = buffer_.size();
+        const auto flush_start = std::chrono::steady_clock::now();
+        auto status = flush_buffer();
+        if (pending_bytes > 0) {
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - flush_start)
+                                        .count();
+            if (status.ok()) {
+                LOG_DEBUG("WAL flush completed: path='{}', bytes={}, elapsed_ms={}", wal_path_,
+                          pending_bytes, elapsed_ms);
+            } else {
+                LOG_ERROR("WAL flush failed: path='{}', bytes={}, elapsed_ms={}, error='{}'",
+                          wal_path_, pending_bytes, elapsed_ms, status.to_string());
+            }
+        }
+        return status;
     }
 
     auto WalWriter::sync() -> core::Status {
+        const auto sync_start = std::chrono::steady_clock::now();
         auto status = flush();
-        if (!status.ok())
+        if (!status.ok()) {
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - sync_start)
+                                        .count();
+            LOG_ERROR("WAL sync failed during flush: path='{}', elapsed_ms={}, error='{}'",
+                      wal_path_, elapsed_ms, status.to_string());
             return status;
+        }
 
         if (fd_ < 0) {
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - sync_start)
+                                        .count();
+            LOG_ERROR("WAL sync failed: path='{}', elapsed_ms={}, error='file not open'", wal_path_,
+                      elapsed_ms);
             return core::Status::IOError("WAL file not open");
         }
 
         if (fsync(fd_) != 0) {
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now() - sync_start)
+                                        .count();
+            LOG_ERROR("WAL sync failed: path='{}', elapsed_ms={}, error='{}'", wal_path_,
+                      elapsed_ms, strerror(errno));
             return core::Status::IOError(fmt::format("fsync failed: {}", strerror(errno)));
         }
 
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                    std::chrono::steady_clock::now() - sync_start)
+                                    .count();
+
+        LOG_DEBUG("WAL fsync completed: path='{}', elapsed_ms={}", wal_path_, elapsed_ms);
         return core::Status::Ok();
     }
 
@@ -159,9 +197,9 @@ namespace embrace::storage {
         fd_ = open(wal_path_.c_str(), O_RDONLY);
 
         if (fd_ < 0) {
-            LOG_INFO("WAL file not found (fresh start): {}", wal_path_);
+            LOG_INFO("WAL file not found; starting with empty state: '{}'", wal_path_);
         } else {
-            LOG_INFO("WAL reader opened: {} (fd={})", wal_path_, fd_);
+            LOG_INFO("WAL reader opened: path='{}', fd={}", wal_path_, fd_);
         }
     }
 
