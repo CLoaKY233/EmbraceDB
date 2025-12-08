@@ -3,7 +3,9 @@
 #include "core/common.hpp"
 #include "core/status.hpp"
 #include "indexing/node.hpp"
+#include "storage/snapshot.hpp"
 #include "storage/wal.hpp"
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -23,6 +25,13 @@ namespace embrace::indexing {
 
         auto recover_from_wal() -> core::Status;
         auto flush_wal() -> core::Status;
+        auto create_checkpoint() -> core::Status;
+        void set_checkpoint_interval(size_t interval) {
+            checkpoint_interval_ = interval;
+        }
+
+        auto iterate_all(std::function<void(const core::Key &, const core::Value &)> callback) const
+            -> void;
 
         // DEBUG
         auto print_tree() -> void;
@@ -34,10 +43,15 @@ namespace embrace::indexing {
 
         bool recovering_;
 
+        std::unique_ptr<storage::Snapshotter> snapshotter_;
+        size_t operation_count_ = 0;
+        size_t checkpoint_interval_ = 10000;
+
         // Configuration
         const size_t max_degree_ = 4;
 
         // Internal helpers
+        auto find_leftmost_leaf() const -> LeafNode *;
         auto find_leaf(const core::Key &key) -> LeafNode *;
         auto split_leaf(LeafNode *leaf) -> void;
         auto split_internal(InternalNode *node) -> void;

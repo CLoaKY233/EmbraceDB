@@ -5,8 +5,10 @@
 #include "log/logger.hpp"
 #include "storage/wal.hpp"
 #include <cstddef>
+#include <fcntl.h>
 #include <fmt/core.h>
 #include <fmt/format.h>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -17,6 +19,9 @@ namespace embrace::indexing {
         root_ = std::make_unique<LeafNode>();
 
         if (!wal_path_.empty()) {
+            std::string snapshot_path = wal_path + ".snapshot";
+            snapshotter_ = std::make_unique<storage::Snapshotter>(snapshot_path);
+
             wal_writer_ = std::make_unique<storage::WalWriter>(wal_path_);
 
             if (!wal_writer_->is_open()) {
@@ -89,6 +94,18 @@ namespace embrace::indexing {
             split_leaf(leaf);
         }
 
+        if (!recovering_) {
+            operation_count_++;
+            if (checkpoint_interval_ > 0 && operation_count_ % checkpoint_interval_ == 0) {
+                auto ckpt_status = create_checkpoint();
+                if (!ckpt_status.ok()) {
+                    LOG_WARN("Auto-checkpoint failed: {}", ckpt_status.to_string());
+
+                    // NOT FAILING OP HERE
+                }
+            }
+        }
+
         return core::Status::Ok();
     }
 
@@ -107,6 +124,17 @@ namespace embrace::indexing {
         }
 
         leaf->values[static_cast<size_t>(idx)] = value;
+
+        if (!recovering_) {
+            operation_count_++;
+            if (checkpoint_interval_ > 0 && operation_count_ % checkpoint_interval_ == 0) {
+                auto ckpt_status = create_checkpoint();
+                if (!ckpt_status.ok()) {
+                    LOG_WARN("Auto-checkpoint failed: {}", ckpt_status.to_string());
+                }
+            }
+        }
+
         return core::Status::Ok();
     }
 
@@ -438,6 +466,16 @@ namespace embrace::indexing {
         };
         RecoveryGuard guard(recovering_);
 
+        if (snapshotter_ and snapshotter_->exists()) {
+            LOG_INFO("Loading snapshot...");
+            auto status = snapshotter_->load_snapshot(*this);
+            if (!status.ok()) {
+                LOG_ERROR("Snapshot load failed: {}", status.to_string());
+                return status;
+            }
+            LOG_INFO("Snapshot loaded successfully");
+        }
+
         storage::WalReader reader(wal_path_);
 
         if (!reader.is_open()) {
@@ -454,6 +492,7 @@ namespace embrace::indexing {
             }
 
             if (!status.ok()) {
+                LOG_ERROR("WAL recovery stopped due to corruption: {}", status.to_string());
                 return status;
             }
 
@@ -487,12 +526,11 @@ namespace embrace::indexing {
             }
 
             else if (record.type == storage::WalRecordType::Checkpoint) {
-                // TODO : implement checkpointing
                 LOG_INFO("Checkpoint marker found during recovery");
             }
         }
 
-        LOG_INFO("Recovery complete: {} records replayed from WAL", records_recovered);
+        LOG_INFO("WAL recovery complete: {} records replayed", records_recovered);
         return core::Status::Ok();
     }
 
@@ -500,6 +538,68 @@ namespace embrace::indexing {
         if (wal_writer_) {
             return wal_writer_->sync();
         }
+        return core::Status::Ok();
+    }
+
+    auto Btree::find_leftmost_leaf() const -> LeafNode * {
+        Node *node = root_.get();
+        while (!node->is_leaf()) {
+            auto *internal = static_cast<InternalNode *>(node);
+            node = internal->children[0].get();
+        }
+        return static_cast<LeafNode *>(node);
+    }
+
+    auto
+    Btree::iterate_all(std::function<void(const core::Key &, const core::Value &)> callback) const
+        -> void {
+        LeafNode *current = find_leftmost_leaf();
+
+        while (current) {
+            for (size_t i = 0; i < current->keys.size(); i++) {
+                callback(current->keys[i], current->values[i]);
+            }
+            current = current->next;
+        }
+    }
+
+    auto Btree::create_checkpoint() -> core::Status {
+        if (!snapshotter_) {
+            return core::Status::InvalidArgument("Snapshotter not initialized");
+        }
+
+        LOG_INFO("Creating checkpoint at operation {}", operation_count_);
+
+        auto status = snapshotter_->create_snapshot(*this);
+        if (!status.ok()) {
+            LOG_ERROR("Snapshot creation failed: {}", status.to_string());
+            return status;
+        }
+
+        if (wal_writer_) {
+            auto flush_status = wal_writer_->flush();
+            if (!flush_status.ok()) {
+                LOG_WARN("WAL flush before truncate failed: {}", flush_status.to_string());
+            }
+
+            auto sync_status = wal_writer_->sync();
+            if (!sync_status.ok()) {
+                LOG_WARN("WAL sync before truncate failed: {}", sync_status.to_string());
+            }
+
+            wal_writer_.reset();
+
+            int fd = ::open(wal_path_.c_str(), O_WRONLY | O_TRUNC);
+            if (fd >= 0) {
+                ::close(fd);
+            } else {
+                LOG_WARN("Failed to truncate WAL file");
+            }
+
+            wal_writer_ = std::make_unique<storage::WalWriter>(wal_path_);
+        }
+
+        LOG_INFO("Checkpoint complete, WAL truncated");
         return core::Status::Ok();
     }
 

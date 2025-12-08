@@ -131,7 +131,7 @@ namespace embrace::storage {
                 return;
 
             std::vector<char> entry_data;
-            entry_data.reserve(8 + key.size() + value().size());
+            entry_data.reserve(8 + key.size() + value.size());
 
             for (int i = 0; i < 4; i++) {
                 entry_data.push_back(static_cast<char>((key.size() >> (i * 8)) & 0xFF));
