@@ -89,9 +89,9 @@ namespace embrace::test {
     }
 
     TEST_F(BtreeBasicTest, GetAfterMultipleInserts) {
-        tree_->put("foo", "bar");
-        tree_->put("baz", "qux");
-        tree_->put("quux", "corge");
+        ASSERT_TRUE(tree_->put("foo", "bar").ok());
+        ASSERT_TRUE(tree_->put("baz", "qux").ok());
+        ASSERT_TRUE(tree_->put("quux", "corge").ok());
 
         EXPECT_EQ(tree_->get("foo").value(), "bar");
         EXPECT_EQ(tree_->get("baz").value(), "qux");
@@ -103,7 +103,7 @@ namespace embrace::test {
     // ============================================================================
 
     TEST_F(BtreeBasicTest, UpdateExistingKey) {
-        tree_->put("foo", "bar");
+        ASSERT_TRUE(tree_->put("foo", "bar").ok());
 
         auto status = tree_->update("foo", "baz");
         ASSERT_TRUE(status.ok());
@@ -120,8 +120,8 @@ namespace embrace::test {
     }
 
     TEST_F(BtreeBasicTest, UpdateMultipleKeys) {
-        tree_->put("foo", "bar");
-        tree_->put("baz", "qux");
+        ASSERT_TRUE(tree_->put("foo", "bar").ok());
+        ASSERT_TRUE(tree_->put("baz", "qux").ok());
 
         ASSERT_TRUE(tree_->update("foo", "updated_foo").ok());
         ASSERT_TRUE(tree_->update("baz", "updated_baz").ok());
@@ -135,7 +135,7 @@ namespace embrace::test {
     // ============================================================================
 
     TEST_F(BtreeBasicTest, DeleteExistingKey) {
-        tree_->put("foo", "bar");
+        ASSERT_TRUE(tree_->put("foo", "bar").ok());
 
         auto status = tree_->remove("foo");
         ASSERT_TRUE(status.ok());
@@ -157,7 +157,7 @@ namespace embrace::test {
     }
 
     TEST_F(BtreeBasicTest, DeleteAndReinsert) {
-        tree_->put("foo", "bar");
+        ASSERT_TRUE(tree_->put("foo", "bar").ok());
         ASSERT_TRUE(tree_->remove("foo").ok());
         ASSERT_TRUE(tree_->put("foo", "baz").ok());
 
@@ -167,9 +167,9 @@ namespace embrace::test {
     }
 
     TEST_F(BtreeBasicTest, DeleteMultipleKeys) {
-        tree_->put("foo", "bar");
-        tree_->put("baz", "qux");
-        tree_->put("quux", "corge");
+        ASSERT_TRUE(tree_->put("foo", "bar").ok());
+        ASSERT_TRUE(tree_->put("baz", "qux").ok());
+        ASSERT_TRUE(tree_->put("quux", "corge").ok());
 
         ASSERT_TRUE(tree_->remove("baz").ok());
         ASSERT_TRUE(tree_->remove("quux").ok());

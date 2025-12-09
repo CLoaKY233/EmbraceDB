@@ -58,7 +58,7 @@ namespace embrace::test {
     TEST_F(BtreeStructureTest, BorrowFromLeftSibling) {
         // Create a scenario where borrowing is necessary
         for (int i = 0; i < 12; ++i) {
-            tree_->put(fmt::format("key_{:02d}", i), "value");
+            ASSERT_TRUE(tree_->put(fmt::format("key_{:02d}", i), "value").ok());
         }
 
         // Delete to trigger underflow
@@ -76,7 +76,7 @@ namespace embrace::test {
 
     TEST_F(BtreeStructureTest, BorrowFromRightSibling) {
         for (int i = 0; i < 12; ++i) {
-            tree_->put(fmt::format("key_{:02d}", i), "value");
+            ASSERT_TRUE(tree_->put(fmt::format("key_{:02d}", i), "value").ok());
         }
 
         // Delete from left side to trigger borrow from right
@@ -95,7 +95,7 @@ namespace embrace::test {
     TEST_F(BtreeStructureTest, MergeWithLeftSibling) {
         // Setup for merge scenario
         for (int i = 0; i < 15; ++i) {
-            tree_->put(fmt::format("merge_{:02d}", i), "value");
+            ASSERT_TRUE(tree_->put(fmt::format("merge_{:02d}", i), "value").ok());
         }
 
         // Delete enough to trigger merge
@@ -113,7 +113,7 @@ namespace embrace::test {
 
     TEST_F(BtreeStructureTest, MergeWithRightSibling) {
         for (int i = 0; i < 15; ++i) {
-            tree_->put(fmt::format("merge_{:02d}", i), "value");
+            ASSERT_TRUE(tree_->put(fmt::format("merge_{:02d}", i), "value").ok());
         }
 
         // Delete from different positions to trigger right merge
@@ -130,12 +130,12 @@ namespace embrace::test {
     TEST_F(BtreeStructureTest, InternalNodeUnderflow) {
         // Create deep tree
         for (int i = 0; i < 100; ++i) {
-            tree_->put(fmt::format("deep_{:03d}", i), "value");
+            ASSERT_TRUE(tree_->put(fmt::format("deep_{:03d}", i), "value").ok());
         }
 
         // Delete many keys to trigger internal node underflow
         for (int i = 20; i < 80; ++i) {
-            tree_->remove(fmt::format("deep_{:03d}", i));
+            ASSERT_TRUE(tree_->remove(fmt::format("deep_{:03d}", i)).ok());
         }
 
         // Verify remaining keys
@@ -152,8 +152,8 @@ namespace embrace::test {
     // ============================================================================
 
     TEST_F(BtreeStructureTest, RootRemainsSingleLeafWhenSmall) {
-        tree_->put("foo", "bar");
-        tree_->put("baz", "qux");
+        ASSERT_TRUE(tree_->put("foo", "bar").ok());
+        ASSERT_TRUE(tree_->put("baz", "qux").ok());
 
         ASSERT_TRUE(tree_->remove("foo").ok());
 
@@ -163,12 +163,12 @@ namespace embrace::test {
     TEST_F(BtreeStructureTest, RootCollapseAfterDeletion) {
         // Build tree with multiple levels
         for (int i = 0; i < 20; ++i) {
-            tree_->put(fmt::format("collapse_{:02d}", i), "value");
+            ASSERT_TRUE(tree_->put(fmt::format("collapse_{:02d}", i), "value").ok());
         }
 
         // Delete most keys to collapse root
         for (int i = 0; i < 18; ++i) {
-            tree_->remove(fmt::format("collapse_{:02d}", i));
+            ASSERT_TRUE(tree_->remove(fmt::format("collapse_{:02d}", i)).ok());
         }
 
         // Verify remaining keys
@@ -177,8 +177,8 @@ namespace embrace::test {
     }
 
     TEST_F(BtreeStructureTest, EmptyTreeAfterDeletingAllKeys) {
-        tree_->put("foo", "bar");
-        tree_->put("baz", "qux");
+        ASSERT_TRUE(tree_->put("foo", "bar").ok());
+        ASSERT_TRUE(tree_->put("baz", "qux").ok());
 
         ASSERT_TRUE(tree_->remove("foo").ok());
         ASSERT_TRUE(tree_->remove("baz").ok());

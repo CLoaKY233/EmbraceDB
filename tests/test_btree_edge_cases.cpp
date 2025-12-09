@@ -1,5 +1,6 @@
 #include "test_utils.hpp"
 #include <gtest/gtest.h>
+#include <vector>
 
 namespace embrace::test {
 
@@ -36,9 +37,9 @@ namespace embrace::test {
     }
 
     TEST_F(BtreeEdgeCasesTest, MinMaxKeySorting) {
-        tree_->put("zzz", "last");
-        tree_->put("aaa", "first");
-        tree_->put("mmm", "middle");
+        ASSERT_TRUE(tree_->put("zzz", "last").ok());
+        ASSERT_TRUE(tree_->put("aaa", "first").ok());
+        ASSERT_TRUE(tree_->put("mmm", "middle").ok());
 
         EXPECT_EQ(tree_->get("aaa").value(), "first");
         EXPECT_EQ(tree_->get("mmm").value(), "middle");
@@ -50,9 +51,9 @@ namespace embrace::test {
     // ============================================================================
 
     TEST_F(BtreeEdgeCasesTest, SpecialCharactersInKeys) {
-        tree_->put("key!@#$%", "special");
-        tree_->put("key\t\n\r", "whitespace");
-        tree_->put("key 中文 ελληνικά", "unicode");
+        ASSERT_TRUE(tree_->put("key!@#$%", "special").ok());
+        ASSERT_TRUE(tree_->put("key\t\n\r", "whitespace").ok());
+        ASSERT_TRUE(tree_->put("key 中文 ελληνικά", "unicode").ok());
 
         EXPECT_TRUE(tree_->get("key!@#$%").has_value());
         EXPECT_TRUE(tree_->get("key\t\n\r").has_value());
@@ -65,7 +66,7 @@ namespace embrace::test {
         value_with_null.push_back('\0');
         value_with_null.push_back('b');
 
-        tree_->put("null_byte_key", value_with_null);
+        ASSERT_TRUE(tree_->put("null_byte_key", value_with_null).ok());
         auto result = tree_->get("null_byte_key");
 
         ASSERT_TRUE(result.has_value());
@@ -79,10 +80,10 @@ namespace embrace::test {
     TEST_F(BtreeEdgeCasesTest, AlternatingInsertDelete) {
         for (int i = 0; i < 100; ++i) {
             auto key = fmt::format("alt_{:03d}", i);
-            tree_->put(key, "value");
+            ASSERT_TRUE(tree_->put(key, "value").ok());
 
             if (i % 2 == 0) {
-                tree_->remove(key);
+                ASSERT_TRUE(tree_->remove(key).ok());
             }
         }
 
@@ -95,7 +96,7 @@ namespace embrace::test {
 
     TEST_F(BtreeEdgeCasesTest, ReverseOrderInsertion) {
         for (int i = 99; i >= 0; --i) {
-            tree_->put(fmt::format("rev_{:02d}", i), "value");
+            ASSERT_TRUE(tree_->put(fmt::format("rev_{:02d}", i), "value").ok());
         }
 
         // Verify all keys
@@ -105,10 +106,10 @@ namespace embrace::test {
     }
 
     TEST_F(BtreeEdgeCasesTest, IdenticalPrefixKeys) {
-        tree_->put("prefix", "1");
-        tree_->put("prefix_a", "2");
-        tree_->put("prefix_ab", "3");
-        tree_->put("prefix_abc", "4");
+        ASSERT_TRUE(tree_->put("prefix", "1").ok());
+        ASSERT_TRUE(tree_->put("prefix_a", "2").ok());
+        ASSERT_TRUE(tree_->put("prefix_ab", "3").ok());
+        ASSERT_TRUE(tree_->put("prefix_abc", "4").ok());
 
         EXPECT_EQ(tree_->get("prefix").value(), "1");
         EXPECT_EQ(tree_->get("prefix_a").value(), "2");
@@ -117,9 +118,9 @@ namespace embrace::test {
     }
 
     TEST_F(BtreeEdgeCasesTest, DuplicateInsertionBehavior) {
-        tree_->put("dup", "first");
-        tree_->put("dup", "second");
-        tree_->put("dup", "third");
+        ASSERT_TRUE(tree_->put("dup", "first").ok());
+        ASSERT_TRUE(tree_->put("dup", "second").ok());
+        ASSERT_TRUE(tree_->put("dup", "third").ok());
 
         EXPECT_EQ(tree_->get("dup").value(), "third");
     }
@@ -135,7 +136,7 @@ namespace embrace::test {
     }
 
     TEST_F(BtreeEdgeCasesTest, IterateSingleElement) {
-        tree_->put("singleton", "value");
+        ASSERT_TRUE(tree_->put("singleton", "value").ok());
 
         size_t count = 0;
         std::string found_key, found_value;
@@ -154,7 +155,7 @@ namespace embrace::test {
     TEST_F(BtreeEdgeCasesTest, IterationOrderIsSorted) {
         std::vector<std::string> keys = {"delta", "alpha", "charlie", "bravo"};
         for (const auto &key : keys) {
-            tree_->put(key, "value");
+            ASSERT_TRUE(tree_->put(key, "value").ok());
         }
 
         std::vector<std::string> iterated_keys;

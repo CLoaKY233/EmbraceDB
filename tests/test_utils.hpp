@@ -1,11 +1,9 @@
 #pragma once
-#include "core/common.hpp"
 #include "indexing/btree.hpp"
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
-#include <vector>
 
 namespace embrace::test {
 
