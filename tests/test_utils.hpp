@@ -1,6 +1,7 @@
 #pragma once
 #include "indexing/btree.hpp"
 #include <filesystem>
+#include <fmt/core.h>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>

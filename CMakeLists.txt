@@ -34,6 +34,8 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(fmt googletest)
 
 # Library target for reusable components
+# Note: GLOB_RECURSE will not trigger CMake reconfigure when files are added/removed.
+# Consider maintaining an explicit list or use CONFIGURE_DEPENDS if that trade-off is acceptable.
 file(GLOB_RECURSE LIB_SOURCES
     "src/core/*.cpp"
     "src/indexing/*.cpp"

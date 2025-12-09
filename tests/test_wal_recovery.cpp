@@ -211,8 +211,8 @@ namespace embrace::test {
         // Recovery should handle gracefully
         auto new_tree = std::make_unique<indexing::Btree>(test_wal_path_);
         auto status = new_tree->recover_from_wal();
-        // May succeed with partial data or report corruption
-        EXPECT_TRUE(status.ok() || !status.ok());
+        // May succeed with partial data or report corruption; ensure no crash occurs
+        (void)status;
     }
 
     TEST_F(WalRecoveryTest, MultipleRecoveryCycles) {
