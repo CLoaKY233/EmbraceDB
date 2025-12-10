@@ -1,6 +1,6 @@
+#include "indexing/btree.hpp"
 #include "core/common.hpp"
 #include "core/status.hpp"
-#include "indexing/btree.hpp"
 #include "indexing/node.hpp"
 #include "log/logger.hpp"
 #include "storage/wal.hpp"
