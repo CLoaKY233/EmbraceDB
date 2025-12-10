@@ -53,7 +53,14 @@ jobs:
 
       - name: Run benchmarks (Release only)
         if: matrix.build_type == 'Release' && matrix.compiler.name == 'clang'
-        run: ./build/embrace
+        run: timeout 5m ./build/embrace > benchmark_output.txt 2>&1
+
+      - name: Upload benchmark results
+        if: matrix.build_type == 'Release' && matrix.compiler.name == 'clang'
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ matrix.compiler.name }}
+          path: benchmark_output.txt
 
   sanitizers:
     runs-on: ubuntu-22.04
@@ -122,4 +129,4 @@ jobs:
 
       - name: Check formatting
         run: |
-          find src tests \( -name "*.cpp" -o -name "*.hpp" \) | xargs clang-format-18 --dry-run --Werror
+          find src tests -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 | xargs -0 clang-format-18 --dry-run --Werror

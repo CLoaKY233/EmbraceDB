@@ -37,14 +37,14 @@ This roadmap tracks Embrace's development path from foundation to production-rea
 
 ## Sprint 1: Correctness & Stability
 
-**Duration**: 3 days | **Target**: End of Week 1 | **Status**: ✅ In Progress
+**Duration**: 3 days | **Target**: End of Week 1 | **Status**: 🚧 In Progress
 
 ### Goal
 Ensure the current implementation is production-ready with comprehensive testing and baseline performance measurements.
 
 ### Tasks
 
-#### 1.1 Test Infrastructure ✅ COMPLETED
+#### 1.1 Test Infrastructure ✅ Core tests done, advanced tests pending
 - [x] Google Test integration (CMake setup)
 - [x] Unit test suite for B+Tree operations
   - [x] Insert/update/delete correctness
@@ -107,7 +107,7 @@ Ensure the current implementation is production-ready with comprehensive testing
 ### Deliverables
 - [x] Test suite framework (>50% coverage achieved)
 - [x] Basic benchmark suite (CLI-based)
-- [ ] CI/CD pipeline (GitHub Actions)
+- [x] CI/CD pipeline (GitHub Actions)
 - [ ] Baseline performance documentation
 - [ ] Zero memory leaks (verified by ASan/Valgrind)
 
@@ -479,3 +479,4 @@ Ship-quality reliability, observability, and documentation.
 
 
 **Last Updated**: December 2025 | **Version**: 0.1.0-alpha
+

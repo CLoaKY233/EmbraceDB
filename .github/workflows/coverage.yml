@@ -3,6 +3,8 @@ name: Coverage
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
   coverage:
@@ -14,18 +16,19 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build cmake clang-17 llvm-17
+          sudo apt-get install -y ninja-build cmake clang-18 llvm-18
 
       - name: Configure with coverage
         env:
-          CC: clang-17
-          CXX: clang++-17
+          CC: clang-18
+          CXX: clang++-18
         run: |
           cmake -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=clang-17 \
-            -DCMAKE_CXX_COMPILER=clang++-17 \
+            -DCMAKE_C_COMPILER=clang-18 \
+            -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_C_FLAGS="-fprofile-instr-generate -fcoverage-mapping" \
             -DCMAKE_CXX_FLAGS="-fprofile-instr-generate -fcoverage-mapping"
 
       - name: Build and test
@@ -37,6 +40,12 @@ jobs:
       - name: Generate coverage report
         run: |
           cd build
-          llvm-profdata-17 merge -sparse embrace-*.profraw -o embrace.profdata
-          llvm-cov-17 show ./embrace_tests -instr-profile=embrace.profdata > coverage.txt
-          llvm-cov-17 report ./embrace_tests -instr-profile=embrace.profdata
+          llvm-profdata-18 merge -sparse embrace-*.profraw -o embrace.profdata
+          llvm-cov-18 show ./embrace_tests -instr-profile=embrace.profdata > coverage.txt
+          llvm-cov-18 report ./embrace_tests -instr-profile=embrace.profdata
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/coverage.txt
