@@ -38,23 +38,29 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate" \
             -DCMAKE_SHARED_LINKER_FLAGS="-fprofile-instr-generate"
 
-      - name: Build and test
+      - name: Build
+        run: cmake --build build
+
+      - name: Run tests with coverage
         run: |
-          cmake --build build
           cd build
-          LLVM_PROFILE_FILE="embrace-%m-%p.profraw" ctest --output-on-failure
+          # Set the environment variable and run tests directly
+          export LLVM_PROFILE_FILE="embrace-%m-%p.profraw"
+          # Run the test binary directly instead of through ctest
+          ./embrace_tests
+          # Verify profraw files were created
+          ls -la embrace-*.profraw || echo "Warning: No profraw files found after test execution"
 
       - name: Generate coverage report
         run: |
           cd build
-          # Check if profraw files exist (tests should have generated them)
-          ls -la *.profraw || echo "Warning: No profraw files found"
+          # Merge coverage data
+          llvm-profdata-18 merge -sparse embrace-*.profraw -o embrace.profdata
 
-          # Merge coverage data (use correct pattern)
-          llvm-profdata-18 merge -sparse *.profraw -o embrace.profdata
-
-          # Generate coverage report (use correct test binary path)
+          # Generate text coverage report
           llvm-cov-18 show ./embrace_tests -instr-profile=embrace.profdata > coverage.txt
+
+          # Print summary to console
           llvm-cov-18 report ./embrace_tests -instr-profile=embrace.profdata
 
       - name: Upload coverage report
