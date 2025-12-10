@@ -2,7 +2,7 @@
 
 [![Status](https://img.shields.io/badge/status-alpha-orange)](https://github.com/cloaky233/EmbraceDB)
 [![Language](https://img.shields.io/badge/C%2B%2B-23-blue)](https://en.cppreference.com/w/cpp/23)
-[![Build](https://img.shields.io/badge/CI-coming--soon-lightgrey)](https://github.com/cloaky233/EmbraceDB/actions)
+[![CI](https://github.com/CLoaKY233/EmbraceDB/actions/workflows/ci.yml/badge.svg)](https://github.com/CLoaKY233/EmbraceDB/actions/workflows/ci.yml)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20posix-brightgreen)](https://github.com/cloaky233/EmbraceDB)
 
 A performant, embeddable key-value storage engine built for simplicity and speed. Embrace trades complexity for clarity—no legacy baggage, no over-engineering. Just a fast, durable B+Tree with WAL recovery and snapshot checkpointing.
