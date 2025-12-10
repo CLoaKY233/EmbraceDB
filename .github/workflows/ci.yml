@@ -10,26 +10,28 @@ jobs:
   build-and-test:
     strategy:
       matrix:
-        os: [ubuntu-22.04]
         build_type: [Debug, Release]
         compiler:
-          - { name: clang, cc: clang-16, cxx: clang++-16 }
+          - { name: clang, cc: clang-18, cxx: clang++-18 }
           - { name: gcc, cc: gcc-12, cxx: g++-12 }
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install LLVM/Clang (for clang builds)
+        if: matrix.compiler.name == 'clang'
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            ninja-build \
-            cmake \
-            ${{ matrix.compiler.cc }} \
-            ${{ matrix.compiler.cxx }}
+          sudo apt-get install -y ninja-build cmake gcc-12 g++-12
 
       - name: Configure CMake
         env:
@@ -38,20 +40,18 @@ jobs:
         run: |
           cmake -B build \
             -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-            -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }} \
-            -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
 
       - name: Build
-        run: cmake --build build --config ${{ matrix.build_type }}
+        run: cmake --build build
 
       - name: Run tests
         run: |
           cd build
-          ctest --output-on-failure --build-config ${{ matrix.build_type }}
+          ctest --output-on-failure
 
       - name: Run benchmarks (Release only)
-        if: matrix.build_type == 'Release'
+        if: matrix.build_type == 'Release' && matrix.compiler.name == 'clang'
         run: ./build/embrace
 
   sanitizers:
@@ -64,15 +64,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install LLVM/Clang
+        run: |
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
+
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build cmake clang-16
+          sudo apt-get install -y ninja-build cmake
 
       - name: Configure with ${{ matrix.sanitizer }} sanitizer
         env:
-          CC: clang-16
-          CXX: clang++-16
+          CC: clang-18
+          CXX: clang++-18
         run: |
           SANITIZER_FLAGS=""
           case "${{ matrix.sanitizer }}" in
@@ -87,8 +93,6 @@ jobs:
           cmake -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=clang-16 \
-            -DCMAKE_CXX_COMPILER=clang++-16 \
             -DCMAKE_CXX_FLAGS="$SANITIZER_FLAGS" \
             -DCMAKE_C_FLAGS="$SANITIZER_FLAGS"
 
@@ -107,11 +111,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install clang-format
+      - name: Install LLVM/Clang
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format-14
+          wget https://apt.llvm.org/llvm.sh
+          chmod +x llvm.sh
+          sudo ./llvm.sh 18
 
       - name: Check formatting
         run: |
-          find src tests -name "*.cpp" -o -name "*.hpp" | xargs clang-format-14 --dry-run --Werror
+          find src tests -name "*.cpp" -o -name "*.hpp" | xargs clang-format-18 --dry-run --Werror
