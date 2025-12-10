@@ -18,10 +18,10 @@ echo "Found ${#FILES[@]} files to format"
 
 if [ "${1:-}" = "--check" ]; then
     echo "🔍 Checking formatting (dry-run)..."
-    clang-format --dry-run --Werror "${FILES[@]}"
+    clang-format-18 --dry-run --Werror "${FILES[@]}"
     echo "✅ All files are properly formatted"
 else
     echo "✨ Formatting files..."
-    clang-format -i "${FILES[@]}"
+    clang-format-18 -i "${FILES[@]}"
     echo "✅ Formatting complete"
 fi
