@@ -1,8 +1,8 @@
+#include "storage/wal.hpp"
 #include "core/common.hpp"
 #include "core/status.hpp"
 #include "log/logger.hpp"
 #include "storage/checksum.hpp"
-#include "storage/wal.hpp"
 #include <cerrno>
 #include <chrono>
 #include <cstdio>

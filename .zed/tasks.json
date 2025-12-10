@@ -41,5 +41,21 @@
     "cwd": "$ZED_WORKTREE_ROOT/build",
     "use_new_terminal": false,
     "reveal": "always"
+  },
+  {
+    "label": "Format Code",
+    "command": "cmake --build build --target format",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Format Check",
+    "command": "cmake --build build --target format-check",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
   }
 ]

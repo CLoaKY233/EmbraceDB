@@ -33,9 +33,7 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(fmt googletest)
 
-# Library target for reusable components
-# Note: GLOB_RECURSE will not trigger CMake reconfigure when files are added/removed.
-# Consider maintaining an explicit list or use CONFIGURE_DEPENDS if that trade-off is acceptable.
+
 file(GLOB_RECURSE LIB_SOURCES
     "src/core/*.cpp"
     "src/indexing/*.cpp"
@@ -78,4 +76,18 @@ add_custom_target(run_tests
     DEPENDS embrace_tests
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     COMMENT "Running all tests..."
+)
+# Code formatting targets (using external script)
+add_custom_target(format
+    COMMAND ${CMAKE_SOURCE_DIR}/scripts/format.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Formatting all C++ source files..."
+    VERBATIM
+)
+
+add_custom_target(format-check
+    COMMAND ${CMAKE_SOURCE_DIR}/scripts/format.sh --check
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Checking code formatting (no modifications)..."
+    VERBATIM
 )

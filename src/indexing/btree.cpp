@@ -1,6 +1,6 @@
+#include "indexing/btree.hpp"
 #include "core/common.hpp"
 #include "core/status.hpp"
-#include "indexing/btree.hpp"
 #include "indexing/node.hpp"
 #include "log/logger.hpp"
 #include "storage/wal.hpp"
@@ -577,9 +577,8 @@ namespace embrace::indexing {
         return static_cast<LeafNode *>(node);
     }
 
-    auto
-    Btree::iterate_all(std::function<void(const core::Key &, const core::Value &)> callback) const
-        -> void {
+    auto Btree::iterate_all(
+        std::function<void(const core::Key &, const core::Value &)> callback) const -> void {
         LeafNode *current = find_leftmost_leaf();
 
         while (current) {
