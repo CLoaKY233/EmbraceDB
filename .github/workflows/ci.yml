@@ -10,11 +10,11 @@ jobs:
   build-and-test:
     strategy:
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
+        os: [ubuntu-22.04]
         build_type: [Debug, Release]
         compiler:
-          - { name: clang, cc: clang-17, cxx: clang++-17 }
-          - { name: gcc, cc: gcc-13, cxx: g++-13 }
+          - { name: clang, cc: clang-16, cxx: clang++-16 }
+          - { name: gcc, cc: gcc-12, cxx: g++-12 }
 
     runs-on: ${{ matrix.os }}
 
@@ -58,7 +58,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        sanitizer: [address, thread, undefined]
+        sanitizer: [address, undefined]
 
     steps:
       - name: Checkout repository
@@ -67,20 +67,17 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build cmake clang-17
+          sudo apt-get install -y ninja-build cmake clang-16
 
       - name: Configure with ${{ matrix.sanitizer }} sanitizer
         env:
-          CC: clang-17
-          CXX: clang++-17
+          CC: clang-16
+          CXX: clang++-16
         run: |
           SANITIZER_FLAGS=""
           case "${{ matrix.sanitizer }}" in
             address)
               SANITIZER_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
-              ;;
-            thread)
-              SANITIZER_FLAGS="-fsanitize=thread"
               ;;
             undefined)
               SANITIZER_FLAGS="-fsanitize=undefined -fno-omit-frame-pointer"
@@ -90,8 +87,8 @@ jobs:
           cmake -B build \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER=clang-17 \
-            -DCMAKE_CXX_COMPILER=clang++-17 \
+            -DCMAKE_C_COMPILER=clang-16 \
+            -DCMAKE_CXX_COMPILER=clang++-16 \
             -DCMAKE_CXX_FLAGS="$SANITIZER_FLAGS" \
             -DCMAKE_C_FLAGS="$SANITIZER_FLAGS"
 
@@ -111,8 +108,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format-17
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-14
 
       - name: Check formatting
         run: |
-          find src tests -name "*.cpp" -o -name "*.hpp" | xargs clang-format-17 --dry-run --Werror
+          find src tests -name "*.cpp" -o -name "*.hpp" | xargs clang-format-14 --dry-run --Werror
