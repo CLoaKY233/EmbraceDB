@@ -1,0 +1,42 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake clang-17 llvm-17
+
+      - name: Configure with coverage
+        env:
+          CC: clang-17
+          CXX: clang++-17
+        run: |
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang-17 \
+            -DCMAKE_CXX_COMPILER=clang++-17 \
+            -DCMAKE_CXX_FLAGS="-fprofile-instr-generate -fcoverage-mapping"
+
+      - name: Build and test
+        run: |
+          cmake --build build
+          cd build
+          LLVM_PROFILE_FILE="embrace-%p.profraw" ctest --output-on-failure
+
+      - name: Generate coverage report
+        run: |
+          cd build
+          llvm-profdata-17 merge -sparse embrace-*.profraw -o embrace.profdata
+          llvm-cov-17 show ./embrace_tests -instr-profile=embrace.profdata > coverage.txt
+          llvm-cov-17 report ./embrace_tests -instr-profile=embrace.profdata

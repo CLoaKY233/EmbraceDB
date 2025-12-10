@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        build_type: [Debug, Release]
+        compiler:
+          - { name: clang, cc: clang-17, cxx: clang++-17 }
+          - { name: gcc, cc: gcc-13, cxx: g++-13 }
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            ninja-build \
+            cmake \
+            ${{ matrix.compiler.cc }} \
+            ${{ matrix.compiler.cxx }}
+
+      - name: Configure CMake
+        env:
+          CC: ${{ matrix.compiler.cc }}
+          CXX: ${{ matrix.compiler.cxx }}
+        run: |
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_C_COMPILER=${{ matrix.compiler.cc }} \
+            -DCMAKE_CXX_COMPILER=${{ matrix.compiler.cxx }}
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build_type }}
+
+      - name: Run tests
+        run: |
+          cd build
+          ctest --output-on-failure --build-config ${{ matrix.build_type }}
+
+      - name: Run benchmarks (Release only)
+        if: matrix.build_type == 'Release'
+        run: ./build/embrace
+
+  sanitizers:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        sanitizer: [address, thread, undefined]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build cmake clang-17
+
+      - name: Configure with ${{ matrix.sanitizer }} sanitizer
+        env:
+          CC: clang-17
+          CXX: clang++-17
+        run: |
+          SANITIZER_FLAGS=""
+          case "${{ matrix.sanitizer }}" in
+            address)
+              SANITIZER_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
+              ;;
+            thread)
+              SANITIZER_FLAGS="-fsanitize=thread"
+              ;;
+            undefined)
+              SANITIZER_FLAGS="-fsanitize=undefined -fno-omit-frame-pointer"
+              ;;
+          esac
+
+          cmake -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang-17 \
+            -DCMAKE_CXX_COMPILER=clang++-17 \
+            -DCMAKE_CXX_FLAGS="$SANITIZER_FLAGS" \
+            -DCMAKE_C_FLAGS="$SANITIZER_FLAGS"
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Run tests with ${{ matrix.sanitizer }}
+        run: |
+          cd build
+          ctest --output-on-failure
+
+  format-check:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-17
+
+      - name: Check formatting
+        run: |
+          find src tests -name "*.cpp" -o -name "*.hpp" | xargs clang-format-17 --dry-run --Werror
