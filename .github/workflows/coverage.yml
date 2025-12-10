@@ -47,11 +47,13 @@ jobs:
       - name: Generate coverage report
         run: |
           cd build
-          # Check if profraw files exist
-          ls -la embrace-*.profraw || echo "Warning: No profraw files found"
-          # Merge coverage data
-          llvm-profdata-18 merge -sparse embrace-*.profraw -o embrace.profdata
-          # Generate coverage report
+          # Check if profraw files exist (tests should have generated them)
+          ls -la *.profraw || echo "Warning: No profraw files found"
+
+          # Merge coverage data (use correct pattern)
+          llvm-profdata-18 merge -sparse *.profraw -o embrace.profdata
+
+          # Generate coverage report (use correct test binary path)
           llvm-cov-18 show ./embrace_tests -instr-profile=embrace.profdata > coverage.txt
           llvm-cov-18 report ./embrace_tests -instr-profile=embrace.profdata
 
