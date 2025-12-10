@@ -188,8 +188,7 @@ namespace {
                 const uint64_t dataset_size = n / 2;
                 for (uint64_t i = 0; i < dataset_size; i++) {
                     [[maybe_unused]] auto status =
-                        tree.put(fmt::format("hotkey_{:06d}", i % 1000),
-                                 fmt::format("data_{}", i));
+                        tree.put(fmt::format("hotkey_{:06d}", i % 1000), fmt::format("data_{}", i));
                 }
             },
             [](embrace::indexing::Btree &tree, uint64_t n) {
@@ -216,9 +215,8 @@ namespace {
             },
             [](embrace::indexing::Btree &tree, uint64_t n) {
                 for (uint64_t i = 0; i < n; i++) {
-                    [[maybe_unused]] auto status =
-                        tree.update(fmt::format("upd_{:06d}", i),
-                                    fmt::format("updated_value_{}", i));
+                    [[maybe_unused]] auto status = tree.update(fmt::format("upd_{:06d}", i),
+                                                               fmt::format("updated_value_{}", i));
                 }
             });
     }
@@ -250,9 +248,8 @@ namespace {
                             next_write_key = 20000;
                     } else {
                         uint64_t key_idx = i % 20000;
-                        [[maybe_unused]] auto status =
-                            tree.update(fmt::format("mix_{:06d}", key_idx),
-                                        fmt::format("updated_{}", i));
+                        [[maybe_unused]] auto status = tree.update(
+                            fmt::format("mix_{:06d}", key_idx), fmt::format("updated_{}", i));
                     }
                 }
             });
@@ -277,14 +274,14 @@ namespace {
 
     auto benchmark_range_iteration() -> BenchmarkResult {
         constexpr uint64_t preload = 10000;
-        // This measures one full tree scan; throughput/latency reflect a single traversal, not per-key cost.
+        // This measures one full tree scan; throughput/latency reflect a single traversal, not
+        // per-key cost.
         return measure_operation_with_setup(
             "Range Iteration (Full tree scan)", 1,
             [=](embrace::indexing::Btree &tree, uint64_t) {
                 for (uint64_t i = 0; i < preload; i++) {
                     [[maybe_unused]] auto status =
-                        tree.put(fmt::format("iter_{:08d}", i),
-                                 fmt::format("payload_{}_xxxx", i));
+                        tree.put(fmt::format("iter_{:08d}", i), fmt::format("payload_{}_xxxx", i));
                 }
             },
             [=](embrace::indexing::Btree &tree, uint64_t) {
@@ -299,28 +296,39 @@ namespace {
 
     auto benchmark_recovery_time() -> BenchmarkResult {
         const uint64_t n = 50000;
-        // Recovery is a one-shot event; metrics represent total recovery time for the dataset.
-        return measure_operation_with_setup(
-            "Recovery from WAL", 1,
-            [n](embrace::indexing::Btree &tree, uint64_t) {
-                for (uint64_t i = 0; i < n; i++) {
-                    [[maybe_unused]] auto status =
-                        tree.put(fmt::format("rec_{:06d}", i),
-                                 fmt::format("recovery_data_{}", i));
-                }
-                [[maybe_unused]] auto status = tree.flush_wal();
-            },
-            [n](embrace::indexing::Btree &, uint64_t) {
-                auto new_tree = std::make_unique<embrace::indexing::Btree>("embrace.wal");
-                auto status = new_tree->recover_from_wal();
-                if (!status.ok()) {
-                    LOG_WARN("Recovery reported failure: {}", status.to_string());
-                }
-                auto sample = new_tree->get(fmt::format("rec_{:06d}", n / 2));
-                if (!sample) {
-                    LOG_WARN("Recovery sample key missing");
-                }
-            });
+        std::remove("embrace.wal");
+        std::remove("embrace.wal.snapshot");
+
+        // Setup: populate and flush, then destroy tree
+        {
+            embrace::indexing::Btree tree("embrace.wal");
+            for (uint64_t i = 0; i < n; i++) {
+                [[maybe_unused]] auto status =
+                    tree.put(fmt::format("rec_{:06d}", i), fmt::format("recovery_data_{}", i));
+            }
+            tree.flush_wal();
+        } // tree is destroyed here when it goes out of scope
+
+        // Now measure cold recovery with no tree in memory
+        const auto start = std::chrono::high_resolution_clock::now();
+        auto new_tree = std::make_unique<embrace::indexing::Btree>("embrace.wal");
+        auto status = new_tree->recover_from_wal();
+        const auto end = std::chrono::high_resolution_clock::now();
+
+        if (!status.ok()) {
+            LOG_WARN("Recovery reported failure: {}", status.to_string());
+        }
+
+        const double duration_ms = std::chrono::duration<double, std::milli>(end - start).count();
+
+        return BenchmarkResult{.name = "Recovery from WAL",
+                               .ops_total = n,
+                               .duration_ms = duration_ms,
+                               .throughput_ops_sec =
+                                   (static_cast<double>(n) / duration_ms) * 1000.0,
+                               .avg_latency_us = (duration_ms * 1000.0) / static_cast<double>(n),
+                               .peak_rss_bytes = 0,
+                               .final_rss_bytes = get_memory_usage()};
     }
 
 } // namespace
@@ -397,8 +405,7 @@ auto main() -> int {
 
     std::cout << fmt::format("Total Operations:     {:>15}\n", total_ops);
     std::cout << fmt::format("Total Time:           {:>12.2f} ms\n", total_time);
-    const double agg_throughput =
-        (static_cast<double>(total_ops) / total_time) * 1000.0; // ops/sec
+    const double agg_throughput = (static_cast<double>(total_ops) / total_time) * 1000.0; // ops/sec
     std::cout << fmt::format("Aggregate Throughput: {:>15} ops/sec\n",
                              fmt::format("{:.2f}M", agg_throughput / 1e6));
     std::cout << fmt::format("Peak Memory Usage:    {:>15}\n", format_bytes(max_memory));

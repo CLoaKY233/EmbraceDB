@@ -60,7 +60,7 @@ add_executable(embrace_tests ${TEST_SOURCES})
 target_link_libraries(embrace_tests PRIVATE
     embrace_lib
     GTest::gtest
-    GTest::gtest_main
+    # GTest::gtest_main
     GTest::gmock
 )
 target_include_directories(embrace_tests PRIVATE src tests)
