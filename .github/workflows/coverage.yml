@@ -15,8 +15,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake clang-18 llvm-18
+          # Download and execute LLVM installation script
+          wget https://apt.llvm.org/llvm.sh
+          chmod u+x llvm.sh
+          sudo ./llvm.sh 18
+
+          # Install additional tools
+          sudo apt-get install -y ninja-build cmake
 
       - name: Configure with coverage
         env:
