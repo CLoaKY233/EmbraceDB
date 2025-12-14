@@ -309,6 +309,3 @@ Contributions that accelerate these sprints are especially valued.
 **Thank you for contributing to Embrace!** 🚀
 
 I'm building a storage engine that prioritizes clarity and performance. Your contributions help achieve that goal.
-
-
-
