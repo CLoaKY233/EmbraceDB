@@ -7,12 +7,26 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(ENABLE_SANITIZERS "Enable ASAN, UBSan, LeakSan" OFF)
+option(ENABLE_COVERAGE "Enable code coverage" OFF)
+option(ENABLE_FUZZING "Enable libFuzzer targets" OFF)
+
 add_compile_options(
     -Wall -Wextra -Wpedantic -Wconversion -Wshadow
     -Wnon-virtual-dtor -Wold-style-cast -Wcast-align
     -Wunused -Woverloaded-virtual -Wpedantic -Wmisleading-indentation
     -Wnull-dereference -Wdouble-promotion -Wformat=2
 )
+
+if(ENABLE_SANITIZERS)
+    add_compile_options(-fsanitize=address,undefined,leak -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=address,undefined,leak)
+endif()
+
+if(ENABLE_COVERAGE)
+    add_compile_options(--coverage -O0 -g)
+    add_link_options(--coverage)
+endif()
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -91,3 +105,24 @@ add_custom_target(format-check
     COMMENT "Checking code formatting (no modifications)..."
     VERBATIM
 )
+
+# Fuzzing targets (requires clang with libFuzzer)
+if(ENABLE_FUZZING)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        message(FATAL_ERROR "Fuzzing requires Clang compiler")
+    endif()
+
+    add_executable(fuzz_wal_parser fuzz/fuzz_wal_parser.cpp)
+    target_link_libraries(fuzz_wal_parser PRIVATE embrace_lib)
+    target_compile_options(fuzz_wal_parser PRIVATE
+        -fsanitize=fuzzer,address
+        -fno-omit-frame-pointer
+        -Wno-error
+    )
+    target_link_options(fuzz_wal_parser PRIVATE
+        -fsanitize=fuzzer,address
+    )
+
+    message(STATUS "Fuzzing enabled")
+    message(STATUS "Run: ./fuzz_wal_parser corpus/ -max_total_time=60")
+endif()
