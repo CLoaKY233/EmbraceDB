@@ -8,125 +8,91 @@ on:
 
 jobs:
   build-and-test:
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         build_type: [Debug, Release]
-        compiler:
-          - { name: clang, cc: clang-18, cxx: clang++-18 }
-          - { name: gcc, cc: gcc-12, cxx: g++-12 }
-
-    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install LLVM/Clang (for clang builds)
-        if: matrix.compiler.name == 'clang'
-        run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main"
-          sudo apt-get update
-          sudo apt-get install -y clang-18 clang++-18 clang-format-18
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake gcc-12 g++-12
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
-      - name: Configure CMake
-        env:
-          CC: ${{ matrix.compiler.cc }}
-          CXX: ${{ matrix.compiler.cxx }}
-        run: |
-          cmake -B build \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
 
       - name: Build
         run: cmake --build build
 
-      - name: Run tests
-        run: |
-          cd build
-          ctest --output-on-failure
-
-      - name: Run benchmarks (Release only)
-        if: matrix.build_type == 'Release' && matrix.compiler.name == 'clang'
-        run: timeout 5m ./build/embrace > benchmark_output.txt 2>&1
-
-      - name: Upload benchmark results
-        if: matrix.build_type == 'Release' && matrix.compiler.name == 'clang'
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results-${{ matrix.compiler.name }}
-          path: benchmark_output.txt
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
 
   sanitizers:
-    runs-on: ubuntu-22.04
-    strategy:
-      matrix:
-        sanitizer: [address, undefined]
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install LLVM/Clang
-        run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main"
-          sudo apt-get update
-          sudo apt-get install -y clang-18 clang++-18
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build cmake
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
-      - name: Configure with ${{ matrix.sanitizer }} sanitizer
-        env:
-          CC: clang-18
-          CXX: clang++-18
-        run: |
-          SANITIZER_FLAGS=""
-          case "${{ matrix.sanitizer }}" in
-            address)
-              SANITIZER_FLAGS="-fsanitize=address -fno-omit-frame-pointer"
-              ;;
-            undefined)
-              SANITIZER_FLAGS="-fsanitize=undefined -fno-omit-frame-pointer"
-              ;;
-          esac
-
-          cmake -B build \
-            -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_CXX_FLAGS="$SANITIZER_FLAGS" \
-            -DCMAKE_C_FLAGS="$SANITIZER_FLAGS"
+      - name: Configure with sanitizers
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_SANITIZERS=ON
 
       - name: Build
         run: cmake --build build
 
-      - name: Run tests with ${{ matrix.sanitizer }}
-        run: |
-          cd build
-          ctest --output-on-failure
+      - name: Run tests with ASAN/UBSan/LeakSan
+        run: ctest --test-dir build --output-on-failure
 
-  format-check:
-    runs-on: ubuntu-22.04
+  coverage:
+    runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install clang-format
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build lcov
+
+      - name: Configure with coverage
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DENABLE_COVERAGE=ON
+
+      - name: Build
+        run: cmake --build build --target embrace_tests
+
+      - name: Run tests
+        run: ./build/embrace_tests
+
+      - name: Generate coverage
         run: |
-          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo add-apt-repository "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main"
-          sudo apt-get update
-          sudo apt-get install -y clang-format-18
+          lcov --capture --directory build --output-file coverage.info \
+            --ignore-errors mismatch --rc lcov_branch_coverage=1
+          lcov --remove coverage.info '/usr/*' '*/build/*' '*/tests/*' '*/fuzz/*' \
+            --output-file coverage.info --ignore-errors unused --rc lcov_branch_coverage=1
+
+      - name: Check threshold
+        run: |
+          COVERAGE=$(lcov --summary coverage.info 2>&1 | grep 'lines' | grep -oE '[0-9]+\.[0-9]+' | head -1)
+          echo "Coverage: ${COVERAGE}%"
+          if awk "BEGIN {exit !($COVERAGE < 75)}"; then
+            echo "::error::Coverage ${COVERAGE}% is below 75% threshold"
+            exit 1
+          fi
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.info
+
+  format-check:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Check formatting
         run: |
-          find src tests -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 | xargs -0 clang-format-18 --dry-run --Werror
+          find src tests -type f \( -name "*.cpp" -o -name "*.hpp" \) -print0 | \
+            xargs -0 clang-format --dry-run --Werror
