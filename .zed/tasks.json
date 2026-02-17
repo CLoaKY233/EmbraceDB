@@ -1,12 +1,5 @@
 [
   {
-    "label": "Clean Build Directory",
-    "command": "rm -rf build",
-    "use_new_terminal": false,
-    "allow_concurrent_runs": false,
-    "hide": "on_success"
-  },
-  {
     "label": "Build (Debug)",
     "command": "cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build build",
     "use_new_terminal": false,
@@ -21,41 +14,55 @@
     "reveal": "always"
   },
   {
-    "label": "Run App",
-    "command": "./embrace",
-    "cwd": "$ZED_WORKTREE_ROOT/build",
+    "label": "Run Database",
+    "command": "./build/embrace",
     "use_new_terminal": true,
-    "allow_concurrent_runs": false
+    "allow_concurrent_runs": false,
+    "reveal": "always"
   },
   {
     "label": "Test (All)",
-    "command": "ctest --output-on-failure",
-    "cwd": "$ZED_WORKTREE_ROOT/build",
+    "command": "./build/embrace_tests",
     "use_new_terminal": false,
     "allow_concurrent_runs": false,
     "reveal": "always"
   },
   {
-    "label": "Test (Verbose)",
-    "command": "./embrace_tests --gtest_filter=\"*\" --gtest_brief=0",
-    "cwd": "$ZED_WORKTREE_ROOT/build",
+    "label": "Test (Filter)",
+    "command": "./build/embrace_tests --gtest_filter=\"$ZED_SYMBOL*\"",
     "use_new_terminal": false,
     "reveal": "always"
+  },
+  {
+    "label": "Sanitizers",
+    "command": "./scripts/run_sanitizers.sh",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Coverage",
+    "command": "./scripts/coverage.sh",
+    "use_new_terminal": false,
+    "allow_concurrent_runs": false,
+    "reveal": "always"
+  },
+  {
+    "label": "Coverage (Open)",
+    "command": "./scripts/coverage.sh open",
+    "use_new_terminal": false,
+    "hide": "on_success"
   },
   {
     "label": "Format Code",
     "command": "cmake --build build --target format",
-    "cwd": "$ZED_WORKTREE_ROOT",
     "use_new_terminal": false,
-    "allow_concurrent_runs": false,
-    "reveal": "always"
+    "hide": "on_success"
   },
   {
-    "label": "Format Check",
-    "command": "cmake --build build --target format-check",
-    "cwd": "$ZED_WORKTREE_ROOT",
+    "label": "Clean",
+    "command": "rm -rf build build_asan build_coverage build_fuzz coverage_report",
     "use_new_terminal": false,
-    "allow_concurrent_runs": false,
-    "reveal": "always"
+    "hide": "on_success"
   }
 ]

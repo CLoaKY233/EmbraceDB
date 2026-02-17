@@ -6,3 +6,7 @@
 **.wal
 **.log
 **.snapshot
+build_asan
+build_coverage
+build_fuzz
+coverage_report
