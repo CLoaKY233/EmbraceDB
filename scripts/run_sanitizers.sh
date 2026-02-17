@@ -14,6 +14,7 @@ NC='\033[0m'
 cleanup() {
     rm -f "$BUILD_DIR/asan_output.log"
 }
+trap 'cleanup' EXIT
 
 run_sanitizers() {
     echo -e "${YELLOW}Building with AddressSanitizer + UBSan + LeakSanitizer...${NC}"
@@ -28,7 +29,10 @@ run_sanitizers() {
     echo -e "${YELLOW}Running tests with sanitizers...${NC}"
 
     cd "$PROJECT_DIR"
+    set +e
     "$BUILD_DIR/embrace_tests" 2>&1 | tee "$BUILD_DIR/asan_output.log"
+    local test_exit=${PIPESTATUS[0]}
+    set -e
 
     local failed=0
 
@@ -51,6 +55,8 @@ run_sanitizers() {
         echo -e "${RED}❌ UNDEFINED BEHAVIOR DETECTED${NC}"
         failed=1
     fi
+
+    [ $test_exit -ne 0 ] && failed=1
 
     if [ $failed -eq 0 ]; then
         echo -e "${GREEN}✅ All sanitizer checks passed${NC}"

@@ -2,7 +2,7 @@
 
 ## Architecture (Quick View)
 
-```
+```text
 Application (get/put/delete)
         │
    Embrace Engine

@@ -12,7 +12,8 @@ namespace embrace::test {
     class FailureInjectionTest : public ::testing::Test {
       protected:
         void SetUp() override {
-            test_wal_path_ = "test_failure.wal";
+            test_wal_path_ = (fs::path(::testing::TempDir()) /
+                             ("fi_" + std::to_string(getpid()) + ".wal")).string();
             test_snapshot_path_ = test_wal_path_ + ".snapshot";
             cleanup_files();
         }
@@ -38,10 +39,9 @@ namespace embrace::test {
         void corrupt_file_at_offset(const std::string &path, size_t offset,
                                     uint8_t xor_val = 0xFF) {
             std::fstream file(path, std::ios::in | std::ios::out | std::ios::binary);
-            if (!file)
-                return;
-            file.seekp(static_cast<std::streamoff>(offset));
+            ASSERT_TRUE(file.is_open()) << "Failed to open file: " << path;
             char byte;
+            file.seekg(static_cast<std::streamoff>(offset));
             file.read(&byte, 1);
             file.seekp(static_cast<std::streamoff>(offset));
             byte ^= static_cast<char>(xor_val);

@@ -4,6 +4,7 @@
 #include <map>
 #include <random>
 #include <set>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -11,9 +12,11 @@ namespace embrace::test {
 
     class StateMachinePropertyTest : public ::testing::Test {
       protected:
-        std::string wal_path_ = "test_sm_prop.wal";
+        std::string wal_path_;
 
         void SetUp() override {
+            wal_path_ = (fs::path(::testing::TempDir()) /
+                        ("sm_prop_" + std::to_string(getpid()) + ".wal")).string();
             cleanup();
         }
 
@@ -132,6 +135,10 @@ namespace embrace::test {
                 ASSERT_TRUE(result.has_value()) << "missing key=" << k << " seed=" << seed;
                 EXPECT_EQ(result.value(), v) << "key=" << k << " seed=" << seed;
             }
+
+            size_t db_count = 0;
+            recovered.iterate_all([&](const auto &, const auto &) { ++db_count; });
+            EXPECT_EQ(db_count, model.size()) << "DB has extra keys not in model, seed=" << seed;
         }
     }
 

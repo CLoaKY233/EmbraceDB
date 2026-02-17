@@ -68,7 +68,7 @@ cmake --build build --target format-check  # Check without modifying
 
 ## Architecture
 
-```
+```text
 Application (get/put/delete)
         │
    Embrace Engine
