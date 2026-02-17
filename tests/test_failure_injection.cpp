@@ -12,8 +12,9 @@ namespace embrace::test {
     class FailureInjectionTest : public ::testing::Test {
       protected:
         void SetUp() override {
-            test_wal_path_ = (fs::path(::testing::TempDir()) /
-                             ("fi_" + std::to_string(getpid()) + ".wal")).string();
+            test_wal_path_ =
+                (fs::path(::testing::TempDir()) / ("fi_" + std::to_string(getpid()) + ".wal"))
+                    .string();
             test_snapshot_path_ = test_wal_path_ + ".snapshot";
             cleanup_files();
         }

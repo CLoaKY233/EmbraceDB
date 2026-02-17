@@ -15,8 +15,9 @@ namespace embrace::test {
         std::string wal_path_;
 
         void SetUp() override {
-            wal_path_ = (fs::path(::testing::TempDir()) /
-                        ("sm_prop_" + std::to_string(getpid()) + ".wal")).string();
+            wal_path_ =
+                (fs::path(::testing::TempDir()) / ("sm_prop_" + std::to_string(getpid()) + ".wal"))
+                    .string();
             cleanup();
         }
 
