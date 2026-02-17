@@ -1,9 +1,9 @@
 #include "indexing/btree.hpp"
-#include "log/logger.hpp"
 #include <filesystem>
 #include <gtest/gtest.h>
 #include <map>
 #include <random>
+#include <set>
 
 namespace fs = std::filesystem;
 
@@ -15,10 +15,6 @@ namespace embrace::test {
 
         void SetUp() override {
             cleanup();
-            log::LogConfig config;
-            config.level = log::Level::Error;
-            config.console_output = false;
-            log::Logger::instance().init(config);
         }
 
         void TearDown() override {

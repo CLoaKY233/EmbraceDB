@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+set -o pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -122,8 +123,15 @@ case "${1:-sanitize}" in
         run_fuzzer "${2:-60}"
         ;;
     all)
+        set +e
         run_sanitizers
+        sanitizer_exit=$?
         run_fuzzer "${2:-60}"
+        fuzzer_exit=$?
+        set -e
+        if [ $sanitizer_exit -ne 0 ] || [ $fuzzer_exit -ne 0 ]; then
+            exit 1
+        fi
         ;;
     -h|--help)
         usage

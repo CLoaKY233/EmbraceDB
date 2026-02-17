@@ -1,7 +1,9 @@
 #include "indexing/btree.hpp"
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <fcntl.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
@@ -9,8 +11,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         return 0;
     }
 
-    const char *wal_path = "/tmp/fuzz_wal_test.wal";
-    const char *snapshot_path = "/tmp/fuzz_wal_test.wal.snapshot";
+    char wal_path[64];
+    char snapshot_path[80];
+    snprintf(wal_path, sizeof(wal_path), "/tmp/fuzz_wal_test_%d.wal", static_cast<int>(getpid()));
+    snprintf(snapshot_path, sizeof(snapshot_path), "/tmp/fuzz_wal_test_%d.wal.snapshot",
+             static_cast<int>(getpid()));
 
     int fd = open(wal_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
     if (fd < 0) {

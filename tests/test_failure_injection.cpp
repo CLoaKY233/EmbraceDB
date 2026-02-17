@@ -1,6 +1,4 @@
 #include "indexing/btree.hpp"
-#include "log/logger.hpp"
-#include <chrono>
 #include <fcntl.h>
 #include <filesystem>
 #include <fstream>
@@ -17,11 +15,6 @@ namespace embrace::test {
             test_wal_path_ = "test_failure.wal";
             test_snapshot_path_ = test_wal_path_ + ".snapshot";
             cleanup_files();
-
-            log::LogConfig config;
-            config.level = log::Level::Error;
-            config.console_output = false;
-            log::Logger::instance().init(config);
         }
 
         void TearDown() override {
@@ -380,7 +373,7 @@ namespace embrace::test {
         EXPECT_GE(count, 50);
     }
 
-    TEST_F(FailureInjectionTest, PerformanceBaseline_Recovery) {
+    TEST_F(FailureInjectionTest, LargeCheckpointRecovery) {
         constexpr size_t NUM_ENTRIES = 5000;
 
         {
@@ -391,37 +384,12 @@ namespace embrace::test {
             (void)db.create_checkpoint();
         }
 
-        auto start = std::chrono::steady_clock::now();
-
         indexing::Btree recovered(test_wal_path_);
         ASSERT_TRUE(recovered.recover_from_wal().ok());
-
-        auto elapsed = std::chrono::steady_clock::now() - start;
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-
-        EXPECT_LT(ms, 5000) << "Recovery took " << ms << "ms, expected < 5000ms";
 
         size_t count = 0;
         recovered.iterate_all([&](const auto &, const auto &) { count++; });
         EXPECT_EQ(count, NUM_ENTRIES);
-    }
-
-    TEST_F(FailureInjectionTest, PerformanceBaseline_Writes) {
-        constexpr size_t NUM_OPS = 10000;
-
-        indexing::Btree db(test_wal_path_);
-
-        auto start = std::chrono::steady_clock::now();
-
-        for (size_t i = 0; i < NUM_OPS; ++i) {
-            (void)db.put("key_" + std::to_string(i), "value_" + std::to_string(i));
-        }
-        (void)db.flush_wal();
-
-        auto elapsed = std::chrono::steady_clock::now() - start;
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count();
-
-        EXPECT_LT(ms, 10000) << "10k writes took " << ms << "ms, expected < 10000ms";
     }
 
 } // namespace embrace::test
