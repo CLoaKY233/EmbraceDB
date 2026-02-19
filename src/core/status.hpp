@@ -12,7 +12,9 @@ namespace embrace::core {
         Corruption = 2,
         NotSupported = 3,
         InvalidArgument = 4,
-        IOError = 5
+        IOError = 5,
+        Busy = 6,
+        Aborted = 7
     };
 
     class Status {
@@ -37,6 +39,12 @@ namespace embrace::core {
         static auto InvalidArgument(const std::string &msg) -> Status {
             return Status(StatusCode::InvalidArgument, msg);
         }
+        static auto Busy(const std::string &msg) -> Status {
+            return Status(StatusCode::Busy, msg);
+        }
+        static auto Aborted(const std::string &msg) -> Status {
+            return Status(StatusCode::Aborted, msg);
+        }
 
         // checkers
         [[nodiscard]] auto ok() const -> bool {
@@ -44,6 +52,15 @@ namespace embrace::core {
         }
         [[nodiscard]] auto is_not_found() const -> bool {
             return code_ == StatusCode::NotFound;
+        }
+        [[nodiscard]] auto is_busy() const -> bool {
+            return code_ == StatusCode::Busy;
+        }
+        [[nodiscard]] auto is_aborted() const -> bool {
+            return code_ == StatusCode::Aborted;
+        }
+        [[nodiscard]] auto code() const -> StatusCode {
+            return code_;
         }
 
         // formatting for logging
@@ -71,6 +88,10 @@ namespace embrace::core {
                 return "InvalidArgument";
             case StatusCode::IOError:
                 return "IOError";
+            case StatusCode::Busy:
+                return "Busy";
+            case StatusCode::Aborted:
+                return "Aborted";
             default:
                 return "Unknown";
             }
